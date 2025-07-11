@@ -1,4 +1,4 @@
-# Sunday
+# Sun Day
 
 UV tracking and vitamin D calculator for iOS.
 

@@ -116,7 +116,7 @@ struct ContentView: View {
     }
     
     private var headerSection: some View {
-        Text("SUNDAY")
+        Text("SUN DAY")
             .font(.system(size: 40, weight: .bold, design: .rounded))
             .foregroundColor(.white)
             .tracking(2)

@@ -21,18 +21,18 @@ targets:
     info:
       path: Resources/Info.plist
       properties:
-        CFBundleDisplayName: Sunday
+        CFBundleDisplayName: Sun Day
         LSApplicationCategoryType: public.app-category.healthcare-fitness
         UILaunchStoryboardName: LaunchScreen
         UISupportedInterfaceOrientations: 
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
-        NSLocationWhenInUseUsageDescription: "Sunday wants your location to determine UV levels at your current position"
-        NSLocationAlwaysAndWhenInUseUsageDescription: "Sunday wants your location to track UV exposure throughout the day"
-        NSHealthShareUsageDescription: "Sunday reads your health data to provide personalized vitamin D recommendations"
-        NSHealthUpdateUsageDescription: "Sunday saves your vitamin D intake data to Health app"
+        NSLocationWhenInUseUsageDescription: "Sun Day needs your location to determine UV levels at your current position"
+        NSLocationAlwaysAndWhenInUseUsageDescription: "Sun Day needs your location to track UV exposure throughout the day"
+        NSHealthShareUsageDescription: "Sun Day reads your health data to provide personalized vitamin D recommendations"
+        NSHealthUpdateUsageDescription: "Sun Day saves your vitamin D intake data to Health app"
         UIUserInterfaceStyle: Light
-        NSUserNotificationCenterUsageDescription: "Sunday sends reminders when the sun rises and sets to help you track vitamin D"
+        NSUserNotificationCenterUsageDescription: "Sun Day sends reminders when the sun rises and sets to help you track vitamin D"
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
