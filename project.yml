@@ -42,6 +42,7 @@ targets:
         DEVELOPMENT_ASSET_PATHS: "Sources"
         CODE_SIGN_ENTITLEMENTS: Resources/Sunday.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     capabilities:
       - com.apple.HealthKit
       - com.apple.BackgroundModes:
