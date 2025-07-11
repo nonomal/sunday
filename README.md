@@ -1,51 +1,42 @@
 # Sunday
 
-A minimal iOS app that tracks UV exposure and calculates vitamin D intake based on your location and sun exposure.
+UV tracking and vitamin D calculator for iOS.
 
 ## Features
 
-- Real-time UV index tracking based on location (using free Open-Meteo API)
-- Vitamin D calculation considering:
-  - UV levels
-  - Altitude adjustment (UV increases ~10% per 1000m elevation)
-  - Clothing coverage (including no clothing option)
-  - Skin type (Fitzpatrick scale 1-6)
-  - Sun exposure duration
-- HealthKit integration to save vitamin D data
-- Beautiful, minimal interface that changes color based on time of day
-- Sunrise and sunset times display
-- Automatic notifications:
-  - Sunrise reminder to start tracking
-  - Sunset reminder to check progress
-  - Safe exposure time alert based on skin type
-- Single screen design for simplicity
+- Real-time UV index from your location
+- Vitamin D calculation based on UV, skin type, and clothing
+- Moon phase display at night
+- Sunrise/sunset times
+- Saves to Apple Health
+- No API keys required
+
+## Requirements
+
+- iOS 17.0+
+- iPhone only
+- Xcode 15+
 
 ## Setup
 
-1. Open `Sunday.xcodeproj` in Xcode
-2. Select your development team in project settings
-3. Build and run on your device (HealthKit requires a physical device)
-4. No API key needed - uses free Open-Meteo weather API
-
-## Permissions Required
-
-- Location: To determine UV levels at your position
-- Health: To save vitamin D intake data
-- Notifications: For sunrise/sunset reminders
+1. Clone the repo
+2. Run `xcodegen generate` to create the Xcode project
+3. Open `Sunday.xcodeproj`
+4. Select your development team
+5. Build and run
 
 ## Usage
 
-1. Allow location and health permissions when prompted
-2. Toggle "In the Sun" when you're exposed to sunlight
-3. Select your clothing level
-4. The app will calculate and track your vitamin D intake
-5. Data is automatically saved to Apple Health
+1. Allow location and health permissions
+2. Press the sun button to start tracking
+3. Select your clothing level and skin type
+4. The app calculates vitamin D intake automatically
 
-## Notes
+## APIs Used
 
-- UV data updates every 5 minutes
-- Vitamin D calculations are based on scientific research but should not replace medical advice
-- The app uses a simplified model for vitamin D synthesis
-- HealthKit requires a physical device and proper code signing
-- Clothing options include "No clothing" for maximum exposure tracking
-- Background gradients adapt to real daylight patterns throughout the day
+- Open-Meteo for UV data (free, no key)
+- Farmsense for moon phases (free, no key)
+
+## License
+
+Public domain. Use however you want.
