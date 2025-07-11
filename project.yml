@@ -17,10 +17,13 @@ targets:
       - Sources
     resources:
       - Resources/Assets.xcassets
+      - Resources/LaunchScreen.storyboard
     info:
       path: Resources/Info.plist
       properties:
-        UILaunchScreen: {}
+        CFBundleDisplayName: Sunday
+        LSApplicationCategoryType: public.app-category.healthcare-fitness
+        UILaunchStoryboardName: LaunchScreen
         UISupportedInterfaceOrientations: 
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
@@ -38,6 +41,10 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Resources/Sunday.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: false
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: false
     capabilities:
       - com.apple.HealthKit
       - com.apple.BackgroundModes:

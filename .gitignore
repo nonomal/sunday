@@ -60,3 +60,7 @@ iOSInjectionProject/
 *.moved-aside
 *.xccheckout
 *.xcscmblueprint
+
+# Environment files
+.env
+.env.local

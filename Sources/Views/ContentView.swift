@@ -10,48 +10,53 @@ struct ContentView: View {
     @State private var showClothingPicker = false
     @State private var showSkinTypePicker = false
     @State private var todaysTotal: Double = 0
+    @State private var currentGradientColors: [Color] = []
     
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
             backgroundGradient
             
-            VStack(spacing: 20) {
-                headerSection
-                uvSection
-                vitaminDSection
-                exposureToggle
-                clothingSection
-                skinTypeSection
-                Spacer()
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 20) {
+                        headerSection
+                        uvSection
+                        vitaminDSection
+                        exposureToggle
+                        clothingSection
+                        skinTypeSection
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                    .frame(width: geometry.size.width)
+                }
+                .scrollDisabled(contentFitsInScreen(geometry: geometry))
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 15)
         }
         .onAppear {
             setupApp()
         }
         .onReceive(timer) { _ in
             updateData()
-            // Reload today's total periodically
-            if Int(Date().timeIntervalSince1970) % 60 == 0 {
-                loadTodaysTotal()
-            }
+            loadTodaysTotal()
+            currentGradientColors = gradientColors
         }
-        .onChange(of: vitaminDCalculator.isInSun) { _ in
+        .onChange(of: vitaminDCalculator.isInSun) {
             handleSunToggle()
         }
-        .onChange(of: locationManager.location) { newLocation in
+        .onChange(of: locationManager.location) { _, newLocation in
             if let location = newLocation {
                 uvService.fetchUVData(for: location)
             }
         }
-        .onChange(of: vitaminDCalculator.clothingLevel) { _ in
+        .onChange(of: vitaminDCalculator.clothingLevel) {
             // Update rate when clothing changes
             vitaminDCalculator.updateUV(uvService.currentUV)
         }
-        .onChange(of: vitaminDCalculator.skinType) { _ in
+        .onChange(of: vitaminDCalculator.skinType) {
             // Update rate when skin type changes
             vitaminDCalculator.updateUV(uvService.currentUV)
         }
@@ -59,7 +64,7 @@ struct ContentView: View {
     
     private var backgroundGradient: some View {
         LinearGradient(
-            colors: gradientColors,
+            colors: currentGradientColors.isEmpty ? [Color(hex: "4a90e2"), Color(hex: "7bb7e5")] : currentGradientColors,
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -130,57 +135,97 @@ struct ContentView: View {
             
             HStack(spacing: 15) {
                 VStack(spacing: 5) {
-                    Text("MAX TODAY")
+                    Text(uvService.shouldShowTomorrowTimes ? "MAX TMRW" : "MAX TODAY")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
-                    Text(String(format: "%.1f", uvService.maxUV))
+                    Text(String(format: "%.1f", uvService.displayMaxUV))
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
+                    // Spacer to align with TOMORROW labels
+                    Text(" ")
+                        .font(.system(size: 8, weight: .medium))
+                        .opacity(0)
                 }
                 
                 VStack(spacing: 5) {
                     Text("SAFE TIME")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
-                    Text(uvService.currentUV == 0 ? "--" : "\(safeExposureTime) min")
+                    Text(uvService.currentUV == 0 ? "---" : formatSafeTime(safeExposureTime))
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
+                    // Spacer to align with TOMORROW labels
+                    Text(" ")
+                        .font(.system(size: 8, weight: .medium))
+                        .opacity(0)
                 }
                 
                 VStack(spacing: 5) {
                     Text("SUNRISE")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
-                    Text(formatTime(uvService.todaySunrise))
+                    Text(formatTime(uvService.displaySunrise))
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
+                    if uvService.shouldShowTomorrowTimes {
+                        Text("TOMORROW")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                    } else {
+                        Text(" ")
+                            .font(.system(size: 8, weight: .medium))
+                            .opacity(0)
+                    }
                 }
                 
                 VStack(spacing: 5) {
                     Text("SUNSET")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
-                    Text(formatTime(uvService.todaySunset))
+                    Text(formatTime(uvService.displaySunset))
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
+                    if uvService.shouldShowTomorrowTimes {
+                        Text("TOMORROW")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                    } else {
+                        Text(" ")
+                            .font(.system(size: 8, weight: .medium))
+                            .opacity(0)
+                    }
                 }
             }
             
-            // Show altitude info if significant
-            if uvService.currentAltitude > 100 {
+            // Show cloud and altitude info
+            HStack(spacing: 15) {
                 HStack(spacing: 5) {
-                    Image(systemName: "arrow.up.to.line")
+                    Image(systemName: uvService.currentUV == 0 ? 
+                                     (uvService.currentCloudCover < 70 ? moonPhaseIcon() : "cloud.fill") :
+                                     uvService.currentCloudCover == 0 ? "sun.max" : 
+                                     uvService.currentCloudCover > 50 ? "cloud.fill" : "cloud")
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.6))
-                    Text("\(Int(uvService.currentAltitude))m")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                    Text("(+\(Int((uvService.uvMultiplier - 1) * 100))% UV)")
+                    Text("\(Int(uvService.currentCloudCover))% clouds")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                 }
-                .padding(.top, 5)
+                
+                if uvService.currentAltitude > 100 {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.up.to.line")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.6))
+                        Text("\(Int(uvService.currentAltitude))m")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                        Text("(+\(Int((uvService.uvMultiplier - 1) * 100))% UV)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
             }
+            .padding(.top, 5)
         }
         .padding(.vertical, 25)
         .frame(maxWidth: .infinity)
@@ -200,7 +245,8 @@ struct ContentView: View {
             }
         }) {
             HStack {
-                Image(systemName: vitaminDCalculator.isInSun ? "sun.max.fill" : "sun.max")
+                Image(systemName: vitaminDCalculator.isInSun ? "sun.max.fill" : 
+                                 uvService.currentUV == 0 ? moonPhaseIcon() : "sun.max")
                     .font(.system(size: 24))
                     .symbolEffect(.pulse, isActive: vitaminDCalculator.isInSun)
                 
@@ -374,7 +420,8 @@ struct ContentView: View {
     private func formatTime(_ date: Date?) -> String {
         guard let date = date else { return "--:--" }
         let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
         return formatter.string(from: date)
     }
     
@@ -386,6 +433,7 @@ struct ContentView: View {
         locationManager.requestPermission()
         healthManager.requestAuthorization()
         loadTodaysTotal()
+        currentGradientColors = gradientColors
         
         // Fetch UV data on startup
         if let location = locationManager.location {
@@ -396,6 +444,7 @@ struct ContentView: View {
     private func updateData() {
         guard let location = locationManager.location else { return }
         
+        // Update UV data every 5 minutes
         if Int(Date().timeIntervalSince1970) % 300 == 0 {
             uvService.fetchUVData(for: location)
         }
@@ -458,19 +507,76 @@ struct ContentView: View {
     private func sessionDurationString(from startTime: Date) -> String {
         let duration = Date().timeIntervalSince(startTime)
         let minutes = Int(duration / 60)
-        let seconds = Int(duration.truncatingRemainder(dividingBy: 60))
         
-        if minutes > 0 {
-            return String(format: "%d:%02d", minutes, seconds)
+        if minutes == 0 {
+            return "< 1 min"
+        } else if minutes == 1 {
+            return "1 min"
         } else {
-            return "\(seconds)s"
+            return "\(minutes) mins"
         }
+    }
+    
+    private func moonPhaseIcon() -> String {
+        // Use the phase name from the API to select the correct icon
+        let phaseName = uvService.currentMoonPhaseName.lowercased()
+        
+        // Map phase names to SF Symbols
+        // Note: Farmsense API has typo "Cresent" instead of "Crescent"
+        let icon: String
+        if phaseName.contains("new") {
+            icon = "moonphase.new.moon"
+        } else if phaseName.contains("waxing") && phaseName.contains("cres") {
+            icon = "moonphase.waxing.crescent"
+        } else if phaseName.contains("first quarter") {
+            icon = "moonphase.first.quarter"
+        } else if phaseName.contains("waxing") && phaseName.contains("gibbous") {
+            icon = "moonphase.waxing.gibbous"
+        } else if phaseName.contains("full") {
+            icon = "moonphase.full.moon"
+        } else if phaseName.contains("waning") && phaseName.contains("gibbous") {
+            icon = "moonphase.waning.gibbous"
+        } else if phaseName.contains("last quarter") || phaseName.contains("third quarter") {
+            icon = "moonphase.last.quarter"
+        } else if phaseName.contains("waning") && phaseName.contains("cres") {
+            icon = "moonphase.waning.crescent"
+        } else {
+            // Fallback based on illumination if phase name doesn't match
+            if uvService.currentMoonPhase > 0.85 {
+                icon = "moonphase.full.moon"
+            } else {
+                icon = "moon"
+            }
+        }
+        
+        return icon
+    }
+    
+    private func formatSafeTime(_ minutes: Int) -> String {
+        if minutes < 60 {
+            return "\(minutes) min"
+        } else {
+            let hours = minutes / 60
+            let remainingMinutes = minutes % 60
+            if remainingMinutes == 0 {
+                return "\(hours) hr"
+            } else {
+                return "\(hours)h \(remainingMinutes)m"
+            }
+        }
+    }
+    
+    private func contentFitsInScreen(geometry: GeometryProxy) -> Bool {
+        // Estimate content height
+        let estimatedHeight: CGFloat = 40 + 250 + 140 + 70 + 70 + 70 + 40 // header + UV + vitD + button + clothing + skin + padding
+        return estimatedHeight < geometry.size.height
     }
 }
 
 struct ClothingPicker: View {
     @Binding var selection: ClothingLevel
     @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
         NavigationView {
@@ -494,13 +600,16 @@ struct ClothingPicker: View {
             }
             .navigationTitle("Clothing Level")
             .navigationBarItems(trailing: Button("Done") { dismiss() })
+            .preferredColorScheme(.dark)
         }
+        .presentationBackground(Color(UIColor.systemBackground).opacity(0.95))
     }
 }
 
 struct SkinTypePicker: View {
     @Binding var selection: SkinType
     @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
         NavigationView {
@@ -511,6 +620,14 @@ struct SkinTypePicker: View {
                         dismiss()
                     }) {
                         HStack {
+                            Circle()
+                                .fill(skinColor(for: type))
+                                .frame(width: 30, height: 30)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                            
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Type \(type.rawValue)")
                                     .font(.headline)
@@ -522,7 +639,10 @@ struct SkinTypePicker: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
+                            .padding(.leading, 8)
+                            
                             Spacer()
+                            
                             if selection == type {
                                 Image(systemName: "checkmark")
                                     .foregroundColor(.blue)
@@ -534,7 +654,9 @@ struct SkinTypePicker: View {
             }
             .navigationTitle("Skin Type")
             .navigationBarItems(trailing: Button("Done") { dismiss() })
+            .preferredColorScheme(.dark)
         }
+        .presentationBackground(Color(UIColor.systemBackground).opacity(0.95))
     }
     
     private func skinTypeDetail(for type: SkinType) -> String {
@@ -545,6 +667,17 @@ struct SkinTypePicker: View {
         case .type4: return "Burns minimally, tans well"
         case .type5: return "Rarely burns, tans profusely"
         case .type6: return "Never burns, deeply pigmented"
+        }
+    }
+    
+    private func skinColor(for type: SkinType) -> Color {
+        switch type {
+        case .type1: return Color(red: 1.0, green: 0.92, blue: 0.84)      // Very fair
+        case .type2: return Color(red: 0.98, green: 0.87, blue: 0.73)     // Fair
+        case .type3: return Color(red: 0.94, green: 0.78, blue: 0.63)     // Light brown
+        case .type4: return Color(red: 0.82, green: 0.63, blue: 0.48)     // Moderate brown
+        case .type5: return Color(red: 0.63, green: 0.47, blue: 0.36)     // Dark brown
+        case .type6: return Color(red: 0.4, green: 0.26, blue: 0.18)      // Very dark brown
         }
     }
 }

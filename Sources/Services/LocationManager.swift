@@ -11,8 +11,10 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 100
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.distanceFilter = 500
+        manager.pausesLocationUpdatesAutomatically = true
+        manager.activityType = .fitness
     }
     
     func requestPermission() {
@@ -43,15 +45,6 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        if let clError = error as? CLError {
-            switch clError.code {
-            case .denied:
-                print("Location access denied. Please enable in Settings.")
-            case .locationUnknown:
-                print("Location currently unknown, will retry...")
-            default:
-                print("Location error: \(error.localizedDescription)")
-            }
-        }
+        // Silent error handling - errors are handled by checking location status
     }
 }

@@ -60,10 +60,7 @@ class HealthManager: ObservableObject {
             if let error = error {
                 DispatchQueue.main.async {
                     self?.lastError = error.localizedDescription
-                    print("HealthKit save error: \(error.localizedDescription)")
                 }
-            } else {
-                print("Successfully saved \(amount) IU (\(micrograms) mcg) of vitamin D")
             }
         }
     }
