@@ -204,7 +204,8 @@ struct ContentView: View {
                     .font(.system(size: 24))
                     .symbolEffect(.pulse, isActive: vitaminDCalculator.isInSun)
                 
-                Text(vitaminDCalculator.isInSun ? "Stop" : "Track sun exposure")
+                Text(vitaminDCalculator.isInSun ? "Stop" : 
+                     uvService.currentUV == 0 ? "No UV available" : "Track sun exposure")
                     .font(.system(size: 18, weight: .semibold))
             }
             .foregroundColor(.white)
@@ -214,6 +215,8 @@ struct ContentView: View {
             .cornerRadius(15)
             .animation(.easeInOut(duration: 0.3), value: vitaminDCalculator.isInSun)
         }
+        .disabled(uvService.currentUV == 0 && !vitaminDCalculator.isInSun)
+        .opacity(uvService.currentUV == 0 && !vitaminDCalculator.isInSun ? 0.6 : 1.0)
     }
     
     private var clothingSection: some View {

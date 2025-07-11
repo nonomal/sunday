@@ -16,11 +16,7 @@ targets:
     sources:
       - Sources
     resources:
-      - path: Resources/Assets.xcassets
-        type: folder
-        buildPhase: resources
-      - path: Resources/Sunday.entitlements
-        buildPhase: none
+      - Resources
     info:
       path: Resources/Info.plist
       properties:
@@ -28,8 +24,8 @@ targets:
         UISupportedInterfaceOrientations: 
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
-        NSLocationWhenInUseUsageDescription: "Sunday needs your location to determine UV levels at your current position"
-        NSLocationAlwaysAndWhenInUseUsageDescription: "Sunday needs your location to track UV exposure throughout the day"
+        NSLocationWhenInUseUsageDescription: "Sunday wants your location to determine UV levels at your current position"
+        NSLocationAlwaysAndWhenInUseUsageDescription: "Sunday wants your location to track UV exposure throughout the day"
         NSHealthShareUsageDescription: "Sunday reads your health data to provide personalized vitamin D recommendations"
         NSHealthUpdateUsageDescription: "Sunday saves your vitamin D intake data to Health app"
         UIUserInterfaceStyle: Light

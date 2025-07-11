@@ -97,16 +97,7 @@ class UVService: ObservableObject {
                         self.maxUV = todayMaxUV * altitudeMultiplier
                     }
                     
-                    // Get current hour's UV index
-                    if let hourlyUV = response.hourly?.uvIndex,
-                       hour < hourlyUV.count {
-                        self.currentUV = hourlyUV[hour] * altitudeMultiplier
-                    } else {
-                        // Fallback: estimate current UV based on max and time of day
-                        self.currentUV = self.estimateCurrentUV(maxUV: self.maxUV, hour: hour)
-                    }
-                    
-                    // Parse sunrise and sunset times
+                    // Parse sunrise and sunset times first
                     if let sunriseString = response.daily.sunrise.first,
                        let sunsetString = response.daily.sunset.first {
                         // Open-Meteo returns dates in "YYYY-MM-DDTHH:MM" format
@@ -120,6 +111,24 @@ class UVService: ObservableObject {
                         // Schedule notifications
                         self.scheduleSunNotifications()
                     }
+                    
+                    // Get current hour's UV index
+                    if let hourlyUV = response.hourly?.uvIndex,
+                       hour < hourlyUV.count {
+                        let baseUV = hourlyUV[hour] * altitudeMultiplier
+                        // Check if sun has set
+                        if let sunset = self.todaySunset, Date() > sunset {
+                            self.currentUV = 0.0
+                        } else if let sunrise = self.todaySunrise, Date() < sunrise {
+                            self.currentUV = 0.0
+                        } else {
+                            self.currentUV = baseUV
+                        }
+                    } else {
+                        // Fallback: estimate current UV based on max and time of day
+                        self.currentUV = self.estimateCurrentUV(maxUV: self.maxUV, hour: hour)
+                    }
+                    
                     
                     // Calculate safe exposure times
                     self.calculateSafeExposureTimes()
@@ -160,15 +169,24 @@ class UVService: ObservableObject {
     }
     
     private func estimateCurrentUV(maxUV: Double, hour: Int) -> Double {
-        // UV follows a bell curve peaking around 1 PM
-        let peakHour = 13.0
-        let dayStart = 6.0
-        let dayEnd = 19.0
-        
-        if Double(hour) < dayStart || Double(hour) > dayEnd {
-            return 0.0
+        // Check if we have actual sunrise/sunset times
+        let now = Date()
+        if let sunrise = todaySunrise, let sunset = todaySunset {
+            // Use actual sunrise/sunset to determine if sun is up
+            if now < sunrise || now > sunset {
+                return 0.0
+            }
+        } else {
+            // Fallback to hour-based estimation
+            let dayStart = 6.0
+            let dayEnd = 19.0
+            if Double(hour) < dayStart || Double(hour) > dayEnd {
+                return 0.0
+            }
         }
         
+        // UV follows a bell curve peaking around 1 PM
+        let peakHour = 13.0
         let hourFactor = 1.0 - (abs(Double(hour) - peakHour) / peakHour)
         return max(0, maxUV * hourFactor * 0.9)
     }
@@ -224,21 +242,30 @@ class UVService: ObservableObject {
     }
     
     private func scheduleNotification(at date: Date?, title: String, body: String, identifier: String) {
-        guard let date = date, date > Date() else { return }
+        guard let date = date else { return }
+        
+        // Only schedule if the date is in the future
+        if date <= Date() {
+            print("Not scheduling \(identifier) notification - time has already passed")
+            return
+        }
         
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
         
-        let components = Calendar.current.dateComponents([.hour, .minute], from: date)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        // Use time interval trigger for more reliable delivery
+        let timeInterval = date.timeIntervalSinceNow
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timeInterval, repeats: false)
         
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
         
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("Error scheduling notification: \(error)")
+                print("Error scheduling \(identifier) notification: \(error)")
+            } else {
+                print("Successfully scheduled \(identifier) notification for \(date)")
             }
         }
     }
