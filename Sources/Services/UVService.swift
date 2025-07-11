@@ -84,6 +84,21 @@ class UVService: ObservableObject {
                 receiveValue: { [weak self] response in
                     guard let self = self else { return }
                     
+                    // Debug log the API response
+                    print("=== UV API Response Debug ===")
+                    print("Location: \(latitude), \(longitude)")
+                    print("Current hour: \(hour)")
+                    if let hourlyUV = response.hourly?.uvIndex {
+                        print("Hourly UV data count: \(hourlyUV.count)")
+                        if hour < hourlyUV.count {
+                            print("UV for hour \(hour): \(hourlyUV[hour])")
+                        }
+                    }
+                    print("Daily max UV: \(response.daily.uvIndexMax.first ?? -1)")
+                    print("Sunrise: \(response.daily.sunrise.first ?? "N/A")")
+                    print("Sunset: \(response.daily.sunset.first ?? "N/A")")
+                    print("=============================")
+                    
                     // Calculate altitude adjustment (UV increases ~10% per 1000m)
                     // Note: location.altitude can be negative (below sea level) or -1 if unknown
                     let validAltitude = location.altitude >= 0 ? location.altitude : 0
@@ -124,6 +139,7 @@ class UVService: ObservableObject {
                         } else {
                             self.currentUV = baseUV
                         }
+                        print("Final currentUV after sunset check: \(self.currentUV)")
                     } else {
                         // Fallback: estimate current UV based on max and time of day
                         self.currentUV = self.estimateCurrentUV(maxUV: self.maxUV, hour: hour)

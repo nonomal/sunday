@@ -142,7 +142,7 @@ struct ContentView: View {
                     Text("SAFE TIME")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
-                    Text("\(safeExposureTime) min")
+                    Text(uvService.currentUV == 0 ? "--" : "\(safeExposureTime) min")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
                 }

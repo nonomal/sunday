@@ -16,7 +16,7 @@ targets:
     sources:
       - Sources
     resources:
-      - Resources
+      - Resources/Assets.xcassets
     info:
       path: Resources/Info.plist
       properties:
@@ -30,11 +30,6 @@ targets:
         NSHealthUpdateUsageDescription: "Sunday saves your vitamin D intake data to Health app"
         UIUserInterfaceStyle: Light
         NSUserNotificationCenterUsageDescription: "Sunday sends reminders when the sun rises and sets to help you track vitamin D"
-        CFBundleIcons:
-          CFBundlePrimaryIcon:
-            CFBundleIconFiles:
-              - AppIcon
-            CFBundleIconName: AppIcon
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
