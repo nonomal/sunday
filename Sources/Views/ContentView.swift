@@ -282,13 +282,6 @@ struct ContentView: View {
     private var exposureToggle: some View {
         Button(action: {
             vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
-            
-            // Handle safe time notifications
-            if vitaminDCalculator.isInSun {
-                uvService.scheduleSafeTimeNotification(for: vitaminDCalculator.skinType)
-            } else {
-                uvService.cancelSafeTimeNotification()
-            }
         }) {
             HStack {
                 Image(systemName: vitaminDCalculator.isInSun ? "sun.max.fill" : 
@@ -430,14 +423,14 @@ struct ContentView: View {
                     }
                     .frame(height: 12)
                     
-                    Text(formatVitaminDNumber(vitaminDCalculator.currentVitaminDRate))
+                    Text(formatVitaminDNumber(vitaminDCalculator.currentVitaminDRate / 60.0))
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.white)
                         .monospacedDigit()
                         .frame(minWidth: 80)
                         .frame(height: 34)
                     
-                    Text("IU/hour")
+                    Text("IU/min")
                         .font(.system(size: 12))
                         .foregroundColor(.white.opacity(0.6))
                         .frame(height: 16)
@@ -451,7 +444,7 @@ struct ContentView: View {
                         .tracking(1.2)
                         .frame(height: 12)
                     
-                    Text(formatTodaysTotal(todaysTotal))
+                    Text(formatTodaysTotal(todaysTotal + vitaminDCalculator.sessionVitaminD))
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.white)
                         .monospacedDigit()

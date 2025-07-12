@@ -337,35 +337,8 @@ class UVService: ObservableObject {
         UNUserNotificationCenter.current().add(request)
     }
     
-    func scheduleSafeTimeNotification(for skinType: SkinType) {
-        guard let burnMinutes = burnTimeMinutes[skinType.rawValue] else { return }
-        
-        // Notify at 80% of burn time as a warning
-        let warningMinutes = Int(Double(burnMinutes) * 0.8)
-        
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            
-            // Cancel existing safe time notification
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["safeTimeReached"])
-            
-            _ = Date().addingTimeInterval(TimeInterval(warningMinutes * 60))
-            
-            let content = UNMutableNotificationContent()
-            content.title = "⚠️ Approaching burn limit!"
-            content.body = "You've been in the sun for \(warningMinutes) minutes. Burn limit is \(burnMinutes) minutes."
-            content.sound = .default
-            
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(warningMinutes * 60), repeats: false)
-            let request = UNNotificationRequest(identifier: "safeTimeReached", content: content, trigger: trigger)
-            
-            UNUserNotificationCenter.current().add(request)
-        }
-    }
-    
-    func cancelSafeTimeNotification() {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["safeTimeReached"])
-    }
+    // Removed scheduleSafeTimeNotification and cancelSafeTimeNotification
+    // Now using real-time MED tracking in VitaminDCalculator
     
     private func fetchMoonPhase(for location: CLLocation) {
         // Use Farmsense API - completely free, no API key needed!

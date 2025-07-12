@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import HealthKit
+import UserNotifications
 
 enum ClothingLevel: Int, CaseIterable {
     case none = -1
@@ -81,6 +82,7 @@ class VitaminDCalculator: ObservableObject {
     @Published var sessionVitaminD: Double = 0.0
     @Published var sessionStartTime: Date?
     @Published var skinTypeFromHealth = false
+    @Published var cumulativeMEDFraction: Double = 0.0
     @Published var userAge: Int = 30 {
         didSet {
             UserDefaults.standard.set(userAge, forKey: "userAge")
@@ -142,11 +144,13 @@ class VitaminDCalculator: ObservableObject {
         
         sessionStartTime = Date()
         sessionVitaminD = 0.0
+        cumulativeMEDFraction = 0.0
         lastUV = uvIndex
         
         // Update every second for real-time display
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateVitaminD(uvIndex: self?.lastUV ?? 0)
+            self?.updateMEDExposure(uvIndex: self?.lastUV ?? 0)
         }
         
         updateVitaminDRate(uvIndex: uvIndex)
@@ -156,6 +160,10 @@ class VitaminDCalculator: ObservableObject {
         timer?.invalidate()
         timer = nil
         sessionStartTime = nil
+        cumulativeMEDFraction = 0.0
+        
+        // Cancel any pending burn warnings
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["burnWarning"])
     }
     
     func updateUV(_ uvIndex: Double) {
@@ -276,6 +284,51 @@ class VitaminDCalculator: ObservableObject {
             skinTypeFromHealth = true
         } else {
             skinTypeFromHealth = false
+        }
+    }
+    
+    private func updateMEDExposure(uvIndex: Double) {
+        guard isInSun, uvIndex > 0 else { return }
+        
+        // MED values at UV 1 (must match UVService values)
+        let medTimesAtUV1: [Int: Double] = [
+            1: 150.0,  // Type I
+            2: 250.0,  // Type II
+            3: 425.0,  // Type III
+            4: 600.0,  // Type IV
+            5: 850.0,  // Type V
+            6: 1100.0  // Type VI
+        ]
+        
+        guard let medTimeAtUV1 = medTimesAtUV1[skinType.rawValue] else { return }
+        
+        // Calculate MED per second at current UV
+        let medMinutesAtCurrentUV = medTimeAtUV1 / uvIndex
+        let medFractionPerSecond = 1.0 / (medMinutesAtCurrentUV * 60.0)
+        
+        // Accumulate MED exposure
+        cumulativeMEDFraction += medFractionPerSecond
+        
+        // Check if approaching burn threshold (80% MED)
+        if cumulativeMEDFraction >= 0.8 && cumulativeMEDFraction < 0.81 {
+            // Send notification that user is approaching burn limit
+            scheduleImmediateBurnWarning()
+        }
+    }
+    
+    private func scheduleImmediateBurnWarning() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            
+            let content = UNMutableNotificationContent()
+            content.title = "⚠️ Approaching burn limit!"
+            content.body = "You've reached 80% of your burn threshold. Consider seeking shade."
+            content.sound = .default
+            
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+            let request = UNNotificationRequest(identifier: "burnWarning", content: content, trigger: trigger)
+            
+            UNUserNotificationCenter.current().add(request)
         }
     }
     
