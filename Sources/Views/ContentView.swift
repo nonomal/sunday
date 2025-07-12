@@ -371,6 +371,36 @@ struct ContentView: View {
         VStack(spacing: 15) {
             HStack(alignment: .top, spacing: 15) {
                 VStack(spacing: 8) {
+                    ZStack {
+                        Text("POTENTIAL")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white.opacity(0.6))
+                            .tracking(1.2)
+                            .opacity(vitaminDCalculator.isInSun ? 0 : 1)
+                        
+                        Text("RATE")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white.opacity(0.6))
+                            .tracking(1.2)
+                            .opacity(vitaminDCalculator.isInSun ? 1 : 0)
+                    }
+                    .frame(height: 12)
+                    
+                    Text(formatVitaminDNumber(vitaminDCalculator.currentVitaminDRate / 60.0))
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(.white)
+                        .monospacedDigit()
+                        .frame(minWidth: 80)
+                        .frame(height: 34)
+                    
+                    Text("IU/min")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(height: 16)
+                }
+                .frame(minWidth: 100)
+                
+                VStack(spacing: 8) {
                     Text("SESSION")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.white.opacity(0.6))
@@ -404,36 +434,6 @@ struct ContentView: View {
                         }
                     }
                     .frame(height: 16)
-                }
-                .frame(minWidth: 100)
-                
-                VStack(spacing: 8) {
-                    ZStack {
-                        Text("POTENTIAL")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white.opacity(0.6))
-                            .tracking(1.2)
-                            .opacity(vitaminDCalculator.isInSun ? 0 : 1)
-                        
-                        Text("RATE")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white.opacity(0.6))
-                            .tracking(1.2)
-                            .opacity(vitaminDCalculator.isInSun ? 1 : 0)
-                    }
-                    .frame(height: 12)
-                    
-                    Text(formatVitaminDNumber(vitaminDCalculator.currentVitaminDRate / 60.0))
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(.white)
-                        .monospacedDigit()
-                        .frame(minWidth: 80)
-                        .frame(height: 34)
-                    
-                    Text("IU/min")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.6))
-                        .frame(height: 16)
                 }
                 .frame(minWidth: 100)
                 
