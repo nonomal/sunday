@@ -98,6 +98,52 @@ class HealthManager: ObservableObject {
         healthStore.execute(query)
     }
     
+    func getVitaminDHistory(days: Int, completion: @escaping ([Date: Double]) -> Void) {
+        let calendar = Calendar.current
+        let endDate = Date()
+        guard let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) else {
+            completion([:])
+            return
+        }
+        
+        let predicate = HKQuery.predicateForSamples(
+            withStart: startDate,
+            end: endDate,
+            options: .strictStartDate
+        )
+        
+        var dailyTotals: [Date: Double] = [:]
+        
+        let query = HKSampleQuery(
+            sampleType: vitaminDType,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+        ) { _, samples, error in
+            guard let samples = samples as? [HKQuantitySample], error == nil else {
+                DispatchQueue.main.async {
+                    completion([:])
+                }
+                return
+            }
+            
+            // Group samples by day
+            for sample in samples {
+                let micrograms = sample.quantity.doubleValue(for: .gramUnit(with: .micro))
+                let iuValue = micrograms * 40.0
+                let dayStart = calendar.startOfDay(for: sample.startDate)
+                
+                dailyTotals[dayStart, default: 0] += iuValue
+            }
+            
+            DispatchQueue.main.async {
+                completion(dailyTotals)
+            }
+        }
+        
+        healthStore.execute(query)
+    }
+    
     func getFitzpatrickSkinType(completion: @escaping (HKFitzpatrickSkinType?) -> Void) {
         do {
             let skinType = try healthStore.fitzpatrickSkinType()

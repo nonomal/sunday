@@ -42,7 +42,7 @@ class UVService: ObservableObject {
     @Published var tomorrowMaxUV: Double = 0.0
     @Published var isLoading = false
     @Published var lastError: String?
-    @Published var safeExposureMinutes: [Int: Int] = [:]
+    @Published var burnTimeMinutes: [Int: Int] = [:]
     @Published var todaySunrise: Date?
     @Published var todaySunset: Date?
     @Published var tomorrowSunrise: Date?
@@ -52,6 +52,8 @@ class UVService: ObservableObject {
     @Published var currentCloudCover: Double = 0.0
     @Published var currentMoonPhase: Double = 0.0
     @Published var currentMoonPhaseName: String = ""
+    @Published var isVitaminDWinter = false
+    @Published var currentLatitude: Double = 0.0
     private var lastMoonPhaseUpdate: Date?
     
     var shouldShowTomorrowTimes: Bool {
@@ -84,6 +86,9 @@ class UVService: ObservableObject {
         let latitude = location.coordinate.latitude
         let longitude = location.coordinate.longitude
         let altitude = location.altitude // Get altitude from location
+        
+        // Store latitude for vitamin D winter calculation
+        currentLatitude = abs(latitude)
         
         // Get current time components for UV interpolation
         let now = Date()
@@ -193,9 +198,11 @@ class UVService: ObservableObject {
                         self.currentCloudCover = cloudCover[hour]
                     }
                     
-                    
                     // Calculate safe exposure times
                     self.calculateSafeExposureTimes()
+                    
+                    // Check for vitamin D winter conditions
+                    self.checkVitaminDWinter()
                 }
             )
             .store(in: &cancellables)
@@ -204,6 +211,7 @@ class UVService: ObservableObject {
     private func mockUVData(for location: CLLocation) {
         let hour = Calendar.current.component(.hour, from: Date())
         let latitude = abs(location.coordinate.latitude)
+        currentLatitude = latitude
         
         // Handle altitude for mock data
         let validAltitude = location.altitude >= 0 ? location.altitude : 0
@@ -230,6 +238,7 @@ class UVService: ObservableObject {
         
         calculateSafeExposureTimes()
         scheduleSunNotifications()
+        checkVitaminDWinter()
     }
     
     private func estimateCurrentUV(maxUV: Double, hour: Int) -> Double {
@@ -247,17 +256,27 @@ class UVService: ObservableObject {
     }
     
     private func calculateSafeExposureTimes() {
-        let baseExposure = 120.0
+        // MED (Minimal Erythema Dose) times at UV index 1
+        // Real-world values (not laboratory conditions)
+        // These reflect actual outdoor exposure with natural cooling, movement, and typical base adaptation
+        let medTimesAtUV1: [Int: Double] = [
+            1: 150.0,  // Type I: Very fair skin (burns in ~30 min at UV 5)
+            2: 250.0,  // Type II: Fair skin (burns in ~45-50 min at UV 5)
+            3: 425.0,  // Type III: Light skin (burns in ~75-85 min at UV 5)
+            4: 600.0,  // Type IV: Medium skin (burns in ~100-120 min at UV 5)
+            5: 850.0,  // Type V: Dark skin (burns in ~150-180 min at UV 5)
+            6: 1100.0  // Type VI: Very dark skin (rarely burns)
+        ]
+        
         let uvToUse = max(currentUV, 0.1)
         
-        safeExposureMinutes = [
-            1: Int(baseExposure / uvToUse * 6),
-            2: Int(baseExposure / uvToUse * 5),
-            3: Int(baseExposure / uvToUse * 4),
-            4: Int(baseExposure / uvToUse * 3),
-            5: Int(baseExposure / uvToUse * 2),
-            6: Int(baseExposure / uvToUse)
-        ]
+        // Calculate burn time (full MED)
+        burnTimeMinutes = [:]
+        
+        for (skinType, medTime) in medTimesAtUV1 {
+            let fullMED = medTime / uvToUse
+            burnTimeMinutes[skinType] = max(1, Int(fullMED))
+        }
     }
     
     private func scheduleSunNotifications() {
@@ -319,7 +338,10 @@ class UVService: ObservableObject {
     }
     
     func scheduleSafeTimeNotification(for skinType: SkinType) {
-        guard let safeMinutes = safeExposureMinutes[skinType.rawValue] else { return }
+        guard let burnMinutes = burnTimeMinutes[skinType.rawValue] else { return }
+        
+        // Notify at 80% of burn time as a warning
+        let warningMinutes = Int(Double(burnMinutes) * 0.8)
         
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
@@ -327,14 +349,14 @@ class UVService: ObservableObject {
             // Cancel existing safe time notification
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["safeTimeReached"])
             
-            _ = Date().addingTimeInterval(TimeInterval(safeMinutes * 60))
+            _ = Date().addingTimeInterval(TimeInterval(warningMinutes * 60))
             
             let content = UNMutableNotificationContent()
-            content.title = "⚠️ Safe exposure time reached!"
-            content.body = "You've reached your safe sun exposure limit (\(safeMinutes) minutes). Consider seeking shade."
+            content.title = "⚠️ Approaching burn limit!"
+            content.body = "You've been in the sun for \(warningMinutes) minutes. Burn limit is \(burnMinutes) minutes."
             content.sound = .default
             
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(safeMinutes * 60), repeats: false)
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(warningMinutes * 60), repeats: false)
             let request = UNNotificationRequest(identifier: "safeTimeReached", content: content, trigger: trigger)
             
             UNUserNotificationCenter.current().add(request)
@@ -386,5 +408,26 @@ class UVService: ObservableObject {
                 // Silent error handling
             }
         }.resume()
+    }
+    
+    private func checkVitaminDWinter() {
+        let calendar = Calendar.current
+        let month = calendar.component(.month, from: Date())
+        
+        // Check for vitamin D winter conditions
+        // Above 35° latitude: limited/no vitamin D synthesis in winter months
+        if currentLatitude > 35 {
+            switch month {
+            case 11, 12, 1, 2:  // Nov-Feb
+                isVitaminDWinter = true
+            case 3, 10:  // Mar, Oct - marginal
+                isVitaminDWinter = maxUV < 3.0
+            default:
+                isVitaminDWinter = false
+            }
+        } else {
+            // Below 35° latitude - check if max UV is consistently below 3
+            isVitaminDWinter = maxUV < 3.0
+        }
     }
 }

@@ -21,8 +21,8 @@ enum ClothingLevel: Int, CaseIterable {
     
     var exposureFactor: Double {
         switch self {
-        case .none: return 0.90
-        case .minimal: return 0.75
+        case .none: return 1.0
+        case .minimal: return 0.80
         case .light: return 0.40
         case .moderate: return 0.15
         case .heavy: return 0.05
@@ -51,12 +51,12 @@ enum SkinType: Int, CaseIterable {
     
     var vitaminDFactor: Double {
         switch self {
-        case .type1: return 1.0
-        case .type2: return 0.85
-        case .type3: return 0.7
-        case .type4: return 0.5
-        case .type5: return 0.3
-        case .type6: return 0.15
+        case .type1: return 1.25   // Very fair produces more
+        case .type2: return 1.1    // Fair produces more
+        case .type3: return 1.0    // Light skin is reference
+        case .type4: return 0.7    // Medium skin
+        case .type5: return 0.4    // Dark skin
+        case .type6: return 0.2    // Very dark skin
         }
     }
 }
@@ -71,9 +71,9 @@ class VitaminDCalculator: ObservableObject {
     @Published var skinType: SkinType = .type3 {
         didSet {
             UserDefaults.standard.set(skinType.rawValue, forKey: "userSkinType")
-            // If user manually changes skin type, it's no longer from Health
+            // Check if manually selected type matches HealthKit value
             if !isSettingFromHealth {
-                skinTypeFromHealth = false
+                checkIfMatchesHealthKitSkinType()
             }
         }
     }
@@ -87,11 +87,19 @@ class VitaminDCalculator: ObservableObject {
         }
     }
     @Published var ageFromHealth = false
+    @Published var currentUVQualityFactor: Double = 1.0
+    @Published var currentAdaptationFactor: Double = 1.0
     
     private var timer: Timer?
     private var lastUV: Double = 0.0
     private var healthManager: HealthManager?
     private var isSettingFromHealth = false
+    private weak var uvService: UVService?
+    private var healthKitSkinType: SkinType?
+    
+    // UV response curve parameters
+    private let uvHalfMax = 4.0  // UV index for 50% vitamin D synthesis rate (more linear)
+    private let uvMaxFactor = 3.0 // Maximum multiplication factor at high UV
     
     init() {
         loadUserPreferences()
@@ -101,6 +109,16 @@ class VitaminDCalculator: ObservableObject {
         self.healthManager = healthManager
         checkHealthKitSkinType()
         checkHealthKitAge()
+        updateAdaptationFactor()
+    }
+    
+    func setUVService(_ uvService: UVService) {
+        self.uvService = uvService
+    }
+    
+    private func getSafeMinutes() -> Int {
+        guard let uvService = uvService else { return 60 }
+        return uvService.burnTimeMinutes[skinType.rawValue] ?? 60
     }
     
     private func loadUserPreferences() {
@@ -147,13 +165,15 @@ class VitaminDCalculator: ObservableObject {
     
     private func updateVitaminDRate(uvIndex: Double) {
         // Always calculate the rate to show potential vitamin D gain
-        // Base rate: 1000 IU/hr is conservative estimate for moderate exposure
-        // Studies show 10,000-20,000 IU possible with full body summer sun exposure
-        let baseRate = 1000.0
+        // Base rate: 30000 IU/hr for Type 3 skin with minimal clothing (80% exposure)
+        // Studies consistently show 30,000-40,000 IU/hr in real-world conditions
+        // Full body exposure can reach 40,000-50,000 IU/hr in summer sun
+        let baseRate = 30000.0
         
-        // UV factor: linear up to UV 3, then capped at 2x multiplier
-        // UV 0 = 0x, UV 1.5 = 0.5x, UV 3+ = 2x
-        let uvFactor = min(uvIndex / 3.0, 2.0)
+        // UV factor: Michaelis-Menten-like saturation curve
+        // More accurate representation of vitamin D synthesis kinetics
+        // UV 0 = 0x, UV 3 = 1.25x (50% of max), UV 12 = 2x, UV∞ → 2.5x
+        let uvFactor = (uvIndex * uvMaxFactor) / (uvHalfMax + uvIndex)
         
         // Exposure based on clothing coverage
         let exposureFactor = clothingLevel.exposureFactor
@@ -169,12 +189,15 @@ class VitaminDCalculator: ObservableObject {
         } else if userAge >= 70 {
             ageFactor = 0.25
         } else {
-            // Linear decrease: lose ~1.5% per year after age 20
-            ageFactor = max(0.25, 1.0 - Double(userAge - 20) * 0.015)
+            // Linear decrease: lose ~1% per year after age 20
+            ageFactor = max(0.25, 1.0 - Double(userAge - 20) * 0.01)
         }
         
-        // Final calculation: base * UV * clothing * skin type * age
-        currentVitaminDRate = baseRate * uvFactor * exposureFactor * skinFactor * ageFactor
+        // Calculate UV quality factor based on time of day
+        currentUVQualityFactor = calculateUVQualityFactor()
+        
+        // Final calculation: base * UV * clothing * skin type * age * quality * adaptation
+        currentVitaminDRate = baseRate * uvFactor * exposureFactor * skinFactor * ageFactor * currentUVQualityFactor * currentAdaptationFactor
     }
     
     private func updateVitaminD(uvIndex: Double) {
@@ -220,6 +243,9 @@ class VitaminDCalculator: ObservableObject {
                 mappedSkinType = nil
             }
             
+            // Store the HealthKit skin type for comparison
+            self.healthKitSkinType = mappedSkinType
+            
             // If we got a valid skin type from Health, use it
             if let mappedSkinType = mappedSkinType {
                 self.isSettingFromHealth = true
@@ -240,6 +266,69 @@ class VitaminDCalculator: ObservableObject {
             self.ageFromHealth = true
             
             // Recalculate vitamin D rate with new age
+            self.updateVitaminDRate(uvIndex: self.lastUV)
+        }
+    }
+    
+    private func checkIfMatchesHealthKitSkinType() {
+        // If user manually selects the same skin type as HealthKit, show the heart icon
+        if let healthKitType = healthKitSkinType, healthKitType == skinType {
+            skinTypeFromHealth = true
+        } else {
+            skinTypeFromHealth = false
+        }
+    }
+    
+    private func calculateUVQualityFactor() -> Double {
+        let calendar = Calendar.current
+        let now = Date()
+        let hour = calendar.component(.hour, from: now)
+        let minute = calendar.component(.minute, from: now)
+        
+        // Convert to decimal hours
+        let timeDecimal = Double(hour) + Double(minute) / 60.0
+        
+        // Solar noon approximation (varies by location, but ~13:00 is reasonable)
+        let solarNoon = 13.0
+        
+        // Hours from solar noon
+        let hoursFromNoon = abs(timeDecimal - solarNoon)
+        
+        // UV-B effectiveness decreases from solar noon
+        // Peak quality 10 AM - 3 PM (strong UV-B window)
+        // More gradual reduction than previously modeled
+        let qualityFactor = exp(-hoursFromNoon * 0.2)
+        
+        // Ensure minimum quality during daylight hours
+        return max(0.1, min(1.0, qualityFactor))
+    }
+    
+    private func updateAdaptationFactor() {
+        healthManager?.getVitaminDHistory(days: 7) { [weak self] history in
+            guard let self = self else { return }
+            
+            // Calculate average daily exposure over past 7 days
+            let totalDays = 7.0
+            let totalVitaminD = history.values.reduce(0, +)
+            let averageDailyExposure = totalVitaminD / totalDays
+            
+            // Adaptation factor based on recent exposure
+            // Low exposure (0-1000 IU/day avg) → 0.8x
+            // Moderate exposure (5000 IU/day avg) → 1.0x  
+            // High exposure (10000+ IU/day avg) → 1.2x
+            let adaptationFactor: Double
+            if averageDailyExposure < 1000 {
+                adaptationFactor = 0.8
+            } else if averageDailyExposure >= 10000 {
+                adaptationFactor = 1.2
+            } else {
+                // Linear interpolation between 0.8 and 1.2
+                adaptationFactor = 0.8 + (averageDailyExposure - 1000) / 9000 * 0.4
+            }
+            
+            self.currentAdaptationFactor = adaptationFactor
+            
+            // Recalculate rate with new adaptation factor
             self.updateVitaminDRate(uvIndex: self.lastUV)
         }
     }

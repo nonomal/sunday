@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var showSkinTypePicker = false
     @State private var todaysTotal: Double = 0
     @State private var currentGradientColors: [Color] = []
+    @State private var showInfoSheet = false
     
     private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     
@@ -40,7 +41,7 @@ struct ContentView: View {
             setupApp()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            // Check for updated skin type when app returns to foreground
+            // Check for updated skin type and adaptation when app returns to foreground
             vitaminDCalculator.setHealthManager(healthManager)
         }
         .onReceive(timer) { _ in
@@ -124,14 +125,16 @@ struct ContentView: View {
     }
     
     private var headerSection: some View {
-        Text("SUN DAY")
-            .font(.system(size: 40, weight: .bold, design: .rounded))
-            .foregroundColor(.white)
-            .tracking(2)
+        Button(action: { showInfoSheet = true }) {
+            Text("SUN DAY")
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .tracking(2)
+        }
     }
     
     private var uvSection: some View {
-        VStack(spacing: 15) {
+        VStack(spacing: 8) {
             Text("UV INDEX")
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundColor(.white.opacity(0.7))
@@ -142,38 +145,36 @@ struct ContentView: View {
                 .foregroundColor(.white)
             
             HStack(spacing: 15) {
-                VStack(spacing: 5) {
-                    Text(uvService.shouldShowTomorrowTimes ? "MAX TMRW" : "MAX TODAY")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                    Text(String(format: "%.1f", uvService.displayMaxUV))
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                    // Spacer to align with TOMORROW labels
-                    Text(" ")
-                        .font(.system(size: 8, weight: .medium))
-                        .opacity(0)
-                }
-                
-                VStack(spacing: 5) {
-                    Text("SAFE LIMIT")
+                VStack(spacing: 3) {
+                    Text("BURN LIMIT")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                     Text(uvService.currentUV == 0 ? "---" : formatSafeTime(safeExposureTime))
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
-                    // Spacer to align with TOMORROW labels
                     Text(" ")
                         .font(.system(size: 8, weight: .medium))
                         .opacity(0)
                 }
                 
-                VStack(spacing: 5) {
+                VStack(spacing: 3) {
+                    Text(uvService.shouldShowTomorrowTimes ? "MAX TMRW" : "MAX UVI")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                    Text(String(format: "%.1f", uvService.displayMaxUV))
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                    Text(" ")
+                        .font(.system(size: 8, weight: .medium))
+                        .opacity(0)
+                }
+                
+                VStack(spacing: 3) {
                     Text("SUNRISE")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                     Text(formatTime(uvService.displaySunrise))
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
                     if uvService.shouldShowTomorrowTimes {
                         Text("TOMORROW")
@@ -186,12 +187,12 @@ struct ContentView: View {
                     }
                 }
                 
-                VStack(spacing: 5) {
+                VStack(spacing: 3) {
                     Text("SUNSET")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                     Text(formatTime(uvService.displaySunset))
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
                     if uvService.shouldShowTomorrowTimes {
                         Text("TOMORROW")
@@ -205,37 +206,74 @@ struct ContentView: View {
                 }
             }
             
-            // Show cloud and altitude info
-            HStack(spacing: 15) {
-                HStack(spacing: 5) {
-                    Image(systemName: uvService.currentUV == 0 ? 
-                                     (uvService.currentCloudCover < 70 ? moonPhaseIcon() : "cloud.fill") :
-                                     uvService.currentCloudCover == 0 ? "sun.max" : 
-                                     uvService.currentCloudCover > 50 ? "cloud.fill" : "cloud")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.6))
-                    Text("\(Int(uvService.currentCloudCover))% clouds")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                
-                if uvService.currentAltitude > 100 {
+            // Show cloud/altitude/location info
+            VStack(spacing: 2) {
+                HStack(spacing: 15) {
                     HStack(spacing: 5) {
-                        Image(systemName: "arrow.up.to.line")
+                        Image(systemName: uvService.currentUV == 0 ? 
+                                         (uvService.currentCloudCover < 70 ? moonPhaseIcon() : "cloud.fill") :
+                                         uvService.currentCloudCover == 0 ? "sun.max" : 
+                                         uvService.currentCloudCover > 50 ? "cloud.fill" : "cloud")
                             .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.6))
-                        Text("\(Int(uvService.currentAltitude))m")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.6))
-                        Text("(+\(Int((uvService.uvMultiplier - 1) * 100))% UV)")
+                        Text("\(Int(uvService.currentCloudCover))% clouds")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.white.opacity(0.6))
                     }
+                    
+                    if uvService.currentAltitude > 100 {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.up.to.line")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.6))
+                            Text("\(Int(uvService.currentAltitude))m")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.6))
+                            Text("(+\(Int((uvService.uvMultiplier - 1) * 100))% UV)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                    }
+                }
+                
+                // Location name
+                if !locationManager.locationName.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.6))
+                        Text(locationManager.locationName)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding(.top, 2)
                 }
             }
-            .padding(.top, 5)
+            .padding(.top, 3)
+            
+            // Vitamin D winter warning
+            if uvService.isVitaminDWinter {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.yellow)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Vitamin D Winter")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.yellow)
+                        Text("Limited UV-B at \(Int(uvService.currentLatitude))°. Consider supplements.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.yellow.opacity(0.2))
+                .cornerRadius(10)
+                .padding(.top, 8)
+            }
         }
-        .padding(.vertical, 25)
+        .padding(.vertical, 20)
         .frame(maxWidth: .infinity)
         .background(Color.black.opacity(0.2))
         .cornerRadius(20)
@@ -331,11 +369,14 @@ struct ContentView: View {
         .sheet(isPresented: $showSkinTypePicker) {
             SkinTypePicker(selection: $vitaminDCalculator.skinType)
         }
+        .sheet(isPresented: $showInfoSheet) {
+            InfoSheet()
+        }
     }
     
     private var vitaminDSection: some View {
         VStack(spacing: 15) {
-            HStack(alignment: .top, spacing: 20) {
+            HStack(alignment: .top, spacing: 15) {
                 VStack(spacing: 8) {
                     Text("SESSION")
                         .font(.system(size: 10, weight: .bold))
@@ -345,10 +386,10 @@ struct ContentView: View {
                     
                     HStack(spacing: 4) {
                         Text(formatVitaminDNumber(vitaminDCalculator.sessionVitaminD))
-                            .font(.system(size: 24, weight: .bold))
+                            .font(.system(size: 26, weight: .bold))
                             .foregroundColor(.white)
                             .monospacedDigit()
-                            .frame(minWidth: 70, alignment: .trailing)
+                            .frame(minWidth: 80, alignment: .trailing)
                         
                         Text("IU")
                             .font(.system(size: 14, weight: .medium))
@@ -389,11 +430,11 @@ struct ContentView: View {
                     }
                     .frame(height: 12)
                     
-                    Text("\(Int(vitaminDCalculator.currentVitaminDRate))")
-                        .font(.system(size: 24, weight: .bold))
+                    Text(formatVitaminDNumber(vitaminDCalculator.currentVitaminDRate))
+                        .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.white)
                         .monospacedDigit()
-                        .frame(minWidth: 70)
+                        .frame(minWidth: 80)
                         .frame(height: 34)
                     
                     Text("IU/hour")
@@ -411,10 +452,10 @@ struct ContentView: View {
                         .frame(height: 12)
                     
                     Text(formatTodaysTotal(todaysTotal))
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.white)
                         .monospacedDigit()
-                        .frame(minWidth: 70)
+                        .frame(minWidth: 80)
                         .frame(height: 34)
                     
                     Text("IU total")
@@ -440,7 +481,7 @@ struct ContentView: View {
     }
     
     private var safeExposureTime: Int {
-        uvService.safeExposureMinutes[vitaminDCalculator.skinType.rawValue] ?? 60
+        uvService.burnTimeMinutes[vitaminDCalculator.skinType.rawValue] ?? 60
     }
     
     private func setupApp() {
@@ -449,8 +490,9 @@ struct ContentView: View {
         loadTodaysTotal()
         currentGradientColors = gradientColors
         
-        // Connect HealthManager to VitaminDCalculator
+        // Connect services to VitaminDCalculator
         vitaminDCalculator.setHealthManager(healthManager)
+        vitaminDCalculator.setUVService(uvService)
         
         // Fetch UV data on startup
         if let location = locationManager.location {
@@ -508,8 +550,14 @@ struct ContentView: View {
             return String(format: "%.2f", value)
         } else if value < 10 {
             return String(format: "%.1f", value)
-        } else if value < 100000 {
+        } else if value < 1000 {
             return "\(Int(value))"
+        } else if value < 100000 {
+            // Add comma formatting for readability
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.maximumFractionDigits = 0
+            return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
         } else {
             // Handle very large numbers with K notation
             return String(format: "%.0fK", value / 1000)
@@ -517,8 +565,14 @@ struct ContentView: View {
     }
     
     private func formatTodaysTotal(_ value: Double) -> String {
-        if value < 100000 {
+        if value < 1000 {
             return "\(Int(value))"
+        } else if value < 100000 {
+            // Add comma formatting for readability
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.maximumFractionDigits = 0
+            return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
         } else {
             return String(format: "%.0fK", value / 1000)
         }
@@ -740,5 +794,165 @@ extension Color {
             blue:  Double(b) / 255,
             opacity: Double(a) / 255
         )
+    }
+}
+
+struct InfoSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var vitaminDCalculator: VitaminDCalculator
+    @EnvironmentObject var uvService: UVService
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // About the calculation
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("About")
+                            .font(.headline)
+                        
+                        Text("Sun Day uses a scientifically-based multi-factor model to estimate vitamin D synthesis from UV exposure.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text("The calculation considers UV intensity, time of day, clothing coverage, skin type, age, and recent exposure history.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Base rate: 30,000 IU/hr (minimal clothing, ~80% exposure)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Current Calculation Factors
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Current Factors")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            FactorRow(
+                                label: "UV Factor",
+                                value: String(format: "%.2fx", (uvService.currentUV * 2.5) / (3.0 + uvService.currentUV)),
+                                detail: "Non-linear response curve"
+                            )
+                            
+                            FactorRow(
+                                label: "UV Quality",
+                                value: String(format: "%.0f%%", vitaminDCalculator.currentUVQualityFactor * 100),
+                                detail: "Time of day effectiveness"
+                            )
+                            
+                            FactorRow(
+                                label: "Clothing",
+                                value: String(format: "%.0f%%", vitaminDCalculator.clothingLevel.exposureFactor * 100),
+                                detail: vitaminDCalculator.clothingLevel.description
+                            )
+                            
+                            FactorRow(
+                                label: "Skin Type",
+                                value: String(format: "%.0f%%", vitaminDCalculator.skinType.vitaminDFactor * 100),
+                                detail: vitaminDCalculator.skinType.description
+                            )
+                            
+                            FactorRow(
+                                label: "Age Factor",
+                                value: String(format: "%.0f%%", calculateAgeFactor() * 100),
+                                detail: "Age \(vitaminDCalculator.userAge)"
+                            )
+                            
+                            FactorRow(
+                                label: "Adaptation",
+                                value: String(format: "%.1fx", vitaminDCalculator.currentAdaptationFactor),
+                                detail: "Based on 7-day history"
+                            )
+                            
+                            if uvService.currentAltitude > 100 {
+                                FactorRow(
+                                    label: "Altitude",
+                                    value: String(format: "+%.0f%%", (uvService.uvMultiplier - 1) * 100),
+                                    detail: "\(Int(uvService.currentAltitude))m elevation"
+                                )
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 10)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(10)
+                    }
+                    
+                    // Data sources
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Data Sources")
+                            .font(.headline)
+                        
+                        HStack {
+                            Image(systemName: "location.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Location from device GPS")
+                                .font(.caption)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "sun.max.fill")
+                                .foregroundColor(.orange)
+                            Text("UV data from Open-Meteo")
+                                .font(.caption)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "heart.fill")
+                                .foregroundColor(.red)
+                            Text("Health data from Apple Health")
+                                .font(.caption)
+                        }
+                    }
+                    
+                    Spacer(minLength: 20)
+                }
+                .padding()
+            }
+            .navigationTitle("How It Works")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(trailing: Button("Done") { dismiss() })
+            .preferredColorScheme(.dark)
+        }
+        .presentationBackground(Color(UIColor.systemBackground).opacity(0.95))
+    }
+    
+    private func calculateAgeFactor() -> Double {
+        let age = vitaminDCalculator.userAge
+        if age <= 20 {
+            return 1.0
+        } else if age >= 70 {
+            return 0.25
+        } else {
+            return max(0.25, 1.0 - Double(age - 20) * 0.015)
+        }
+    }
+}
+
+struct FactorRow: View {
+    let label: String
+    let value: String
+    let detail: String
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Text(value)
+                .font(.system(.body, design: .monospaced))
+                .fontWeight(.medium)
+        }
     }
 }
