@@ -98,6 +98,7 @@ class VitaminDCalculator: ObservableObject {
     private var isSettingFromHealth = false
     private weak var uvService: UVService?
     private var healthKitSkinType: SkinType?
+    private var lastUpdateTime: Date?
     
     // UV response curve parameters
     private let uvHalfMax = 4.0  // UV index for 50% vitamin D synthesis rate (more linear)
@@ -146,11 +147,15 @@ class VitaminDCalculator: ObservableObject {
         sessionVitaminD = 0.0
         cumulativeMEDFraction = 0.0
         lastUV = uvIndex
+        lastUpdateTime = Date()
         
         // Update every second for real-time display
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.updateVitaminD(uvIndex: self?.lastUV ?? 0)
-            self?.updateMEDExposure(uvIndex: self?.lastUV ?? 0)
+            guard let self = self else { return }
+            // Use the current UV from UVService, not lastUV
+            let currentUV = self.lastUV
+            self.updateVitaminD(uvIndex: currentUV)
+            self.updateMEDExposure(uvIndex: currentUV)
         }
         
         updateVitaminDRate(uvIndex: uvIndex)
@@ -211,9 +216,16 @@ class VitaminDCalculator: ObservableObject {
     private func updateVitaminD(uvIndex: Double) {
         guard isInSun else { return }
         
+        // Always recalculate rate with current UV to ensure accuracy
         updateVitaminDRate(uvIndex: uvIndex)
-        // Divide by 3600 since we're updating every second (hourly rate / 3600 seconds)
-        sessionVitaminD += currentVitaminDRate / 3600.0
+        
+        // Calculate actual time elapsed since last update (should be ~1 second)
+        let now = Date()
+        let elapsed = lastUpdateTime.map { now.timeIntervalSince($0) } ?? 1.0
+        lastUpdateTime = now
+        
+        // Add vitamin D based on actual elapsed time
+        sessionVitaminD += currentVitaminDRate * (elapsed / 3600.0)
     }
     
     func toggleSunExposure(uvIndex: Double) {
