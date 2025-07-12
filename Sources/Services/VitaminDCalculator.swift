@@ -178,10 +178,10 @@ class VitaminDCalculator: ObservableObject {
     
     private func updateVitaminDRate(uvIndex: Double) {
         // Always calculate the rate to show potential vitamin D gain
-        // Base rate: 30000 IU/hr for Type 3 skin with minimal clothing (80% exposure)
-        // Studies consistently show 30,000-40,000 IU/hr in real-world conditions
-        // Full body exposure can reach 40,000-50,000 IU/hr in summer sun
-        let baseRate = 30000.0
+        // Base rate: 21000 IU/hr for Type 3 skin with minimal clothing (80% exposure)
+        // Conservative estimate within research range of 20,000-40,000 IU/hr
+        // Full body exposure can reach 30,000-40,000 IU/hr in optimal conditions
+        let baseRate = 21000.0
         
         // UV factor: Michaelis-Menten-like saturation curve
         // More accurate representation of vitamin D synthesis kinetics

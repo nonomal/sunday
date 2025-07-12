@@ -812,9 +812,13 @@ struct InfoSheet: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
-                        Text("Base rate: 30,000 IU/hr (minimal clothing, ~80% exposure)")
+                        Text("Base rate: 21,000 IU/hr (minimal clothing, ~80% exposure)")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                        
+                        Link("View detailed methodology", destination: URL(string: "https://github.com/jackjackbits/sunday/blob/main/METHODOLOGY.md")!)
+                            .font(.caption)
+                            .foregroundColor(.blue)
                     }
                     
                     // Current Calculation Factors

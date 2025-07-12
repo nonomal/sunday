@@ -12,11 +12,11 @@ Vitamin D Rate (IU/hour) = Base Rate × UV Factor × Clothing Factor × Skin Typ
 
 ## Factor Breakdown
 
-### 1. Base Rate (30,000 IU/hr)
+### 1. Base Rate (21,000 IU/hr)
 - Represents minimal clothing exposure (~80% body surface area)
-- Based on real-world measurements showing 30,000-40,000 IU/hr
-- Studies: 10,000 IU in 15-20 minutes = 30,000-40,000 IU/hr
-- Full body exposure can reach 40,000-50,000 IU/hr in summer sun
+- Conservative estimate within research range of 20,000-40,000 IU/hr
+- Studies show 10,000 IU in 20-30 minutes typical
+- Full body exposure can reach 30,000-40,000 IU/hr in optimal conditions
 
 ### 2. UV Factor (Non-linear)
 - Implements Michaelis-Menten-like saturation curve
