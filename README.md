@@ -2,7 +2,7 @@
 
 UV tracking and vitamin D calculator for iOS.
 
-[📖 Read the detailed methodology](METHODOLOGY.md)
+[📖 Read the detailed methodology](METHODOLOGY.md) | [🔒 Privacy Policy](PRIVACY.md)
 
 ## Features
 
