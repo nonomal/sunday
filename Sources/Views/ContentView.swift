@@ -328,6 +328,8 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showClothingPicker) {
             ClothingPicker(selection: $vitaminDCalculator.clothingLevel)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
         }
     }
     
@@ -669,7 +671,7 @@ struct ClothingPicker: View {
             .navigationBarItems(trailing: Button("Done") { dismiss() })
             .preferredColorScheme(.dark)
         }
-        .presentationBackground(Color(UIColor.systemBackground).opacity(0.95))
+        .presentationBackground(Color(UIColor.systemBackground).opacity(0.99))
     }
 }
 
@@ -738,7 +740,7 @@ struct SkinTypePicker: View {
                 }
             }
         }
-        .presentationBackground(Color(UIColor.systemBackground).opacity(0.95))
+        .presentationBackground(Color(UIColor.systemBackground).opacity(0.99))
     }
     
     private func skinTypeDetail(for type: SkinType) -> String {
@@ -914,7 +916,7 @@ struct InfoSheet: View {
             .navigationBarItems(trailing: Button("Done") { dismiss() })
             .preferredColorScheme(.dark)
         }
-        .presentationBackground(Color(UIColor.systemBackground).opacity(0.95))
+        .presentationBackground(Color(UIColor.systemBackground).opacity(0.99))
     }
     
     private func calculateAgeFactor() -> Double {
