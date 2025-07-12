@@ -2,6 +2,8 @@
 
 UV tracking and vitamin D calculator for iOS.
 
+[📖 Read the detailed methodology](METHODOLOGY.md)
+
 ## Features
 
 - Real-time UV index from your location
