@@ -33,6 +33,10 @@ targets:
         NSHealthUpdateUsageDescription: "Sun Day saves your vitamin D intake data to Health app"
         UIUserInterfaceStyle: Light
         NSUserNotificationCenterUsageDescription: "Sun Day sends reminders when the sun rises and sets to help you track vitamin D"
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - sunday
+            CFBundleURLName: com.jack.sunday
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
@@ -51,3 +55,35 @@ targets:
           enabled: true
           modes:
             - location
+      - com.apple.ApplicationGroups:
+          enabled: true
+          groups:
+            - group.sunday.widget
+    dependencies:
+      - target: SundayWidget
+  
+  SundayWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - SundayWidget
+    resources:
+      - SundayWidget/Assets.xcassets
+    info:
+      path: SundayWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Sun Day Widget
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.sunday.app.widget
+        INFOPLIST_FILE: SundayWidget/Info.plist
+        SKIP_INSTALL: true
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_ENTITLEMENTS: SundayWidget/SundayWidget.entitlements
+    capabilities:
+      - com.apple.ApplicationGroups:
+          enabled: true
+          groups:
+            - group.sunday.widget

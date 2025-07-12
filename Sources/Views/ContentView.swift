@@ -1,11 +1,16 @@
 import SwiftUI
 import CoreLocation
+import UIKit
+import SwiftData
+import WidgetKit
 
 struct ContentView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var uvService: UVService
     @EnvironmentObject var vitaminDCalculator: VitaminDCalculator
     @EnvironmentObject var healthManager: HealthManager
+    @EnvironmentObject var networkMonitor: NetworkMonitor
+    @Environment(\.modelContext) private var modelContext
     
     @State private var showClothingPicker = false
     @State private var showSkinTypePicker = false
@@ -20,29 +25,92 @@ struct ContentView: View {
             backgroundGradient
             
             GeometryReader { geometry in
-                ScrollView {
+                if uvService.hasNoData {
+                    // No data available view
                     VStack(spacing: 20) {
-                        headerSection
-                        uvSection
-                        vitaminDSection
-                        exposureToggle
-                        clothingSection
-                        skinTypeSection
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 60))
+                            .foregroundColor(.white.opacity(0.6))
+                        
+                        Text("No Data Available")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Text("Connect to the internet to fetch UV data")
+                            .font(.system(size: 16))
+                            .foregroundColor(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                        
+                        if locationManager.location != nil {
+                            Button(action: {
+                                if let location = locationManager.location {
+                                    uvService.fetchUVData(for: location)
+                                }
+                            }) {
+                                Text("Retry")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 30)
+                                    .padding(.vertical, 12)
+                                    .background(Color.white.opacity(0.2))
+                                    .cornerRadius(25)
+                            }
+                        }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
-                    .frame(width: geometry.size.width)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            headerSection
+                            uvSection
+                            vitaminDSection
+                            exposureToggle
+                            clothingSection
+                            skinTypeSection
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 20)
+                        .padding(.bottom, uvService.isOfflineMode ? 40 : 0)
+                    .animation(.easeInOut(duration: 0.3), value: uvService.isOfflineMode)
+                        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                        .frame(width: geometry.size.width)
+                    }
+                    .scrollDisabled(contentFitsInScreen(geometry: geometry))
                 }
-                .scrollDisabled(contentFitsInScreen(geometry: geometry))
+            }
+            
+            // Offline mode indicator as thin bar at bottom
+            if uvService.isOfflineMode && !uvService.hasNoData {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 7) {
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 14))
+                        if let lastUpdate = uvService.lastSuccessfulUpdate {
+                            Text("Offline • Using cached data from \(timeAgo(from: lastUpdate))")
+                        } else {
+                            Text("Offline • No cached data")
+                        }
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
+                    .padding(.bottom, 20)
+                    .background(Color.orange.opacity(0.9))
+                }
+                .ignoresSafeArea(edges: .bottom)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: uvService.isOfflineMode)
         .onAppear {
             setupApp()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             // Check for updated skin type and adaptation when app returns to foreground
             vitaminDCalculator.setHealthManager(healthManager)
+            // NetworkMonitor will automatically detect when network is restored
         }
         .onReceive(timer) { _ in
             updateData()
@@ -68,6 +136,9 @@ struct ContentView: View {
         .onChange(of: uvService.currentUV) { _, newUV in
             // Update rate when UV changes
             vitaminDCalculator.updateUV(newUV)
+        }
+        .onOpenURL { url in
+            handleURL(url)
         }
     }
     
@@ -251,6 +322,7 @@ struct ContentView: View {
             }
             .padding(.top, 3)
             
+            
             // Vitamin D winter warning
             if uvService.isVitaminDWinter {
                 HStack(spacing: 8) {
@@ -281,6 +353,10 @@ struct ContentView: View {
     
     private var exposureToggle: some View {
         Button(action: {
+            // Haptic feedback
+            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+            impactFeedback.impactOccurred()
+            
             vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
         }) {
             HStack {
@@ -485,9 +561,11 @@ struct ContentView: View {
         loadTodaysTotal()
         currentGradientColors = gradientColors
         
-        // Connect services to VitaminDCalculator
+        // Connect services - MUST set modelContext before any UV data fetching
         vitaminDCalculator.setHealthManager(healthManager)
         vitaminDCalculator.setUVService(uvService)
+        uvService.setModelContext(modelContext)
+        uvService.setNetworkMonitor(networkMonitor)
         
         // Fetch UV data on startup
         if let location = locationManager.location {
@@ -496,6 +574,14 @@ struct ContentView: View {
         
         // Initialize vitamin D rate with current UV (even if 0)
         vitaminDCalculator.updateUV(uvService.currentUV)
+        
+        // Ensure moon phase is available for widget
+        if uvService.currentMoonPhaseName.isEmpty {
+            let defaultPhase = "Waxing Gibbous"
+            uvService.currentMoonPhaseName = defaultPhase
+            UserDefaults(suiteName: "group.sunday.widget")?.set(defaultPhase, forKey: "moonPhaseName")
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
     
     private func updateData() {
@@ -586,6 +672,36 @@ struct ContentView: View {
         }
     }
     
+    private func timeAgo(from date: Date) -> String {
+        let duration = Date().timeIntervalSince(date)
+        let minutes = Int(duration / 60)
+        let hours = Int(duration / 3600)
+        
+        if minutes < 1 {
+            return "just now"
+        } else if minutes < 60 {
+            return "\(minutes)m ago"
+        } else if hours < 24 {
+            return "\(hours)h ago"
+        } else {
+            return "\(hours / 24)d ago"
+        }
+    }
+    
+    private func handleURL(_ url: URL) {
+        guard url.scheme == "sunday" else { return }
+        
+        switch url.host {
+        case "toggle":
+            // Only toggle if UV > 0, matching the main app behavior
+            if uvService.currentUV > 0 {
+                vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+            }
+        default:
+            break
+        }
+    }
+    
     private func moonPhaseIcon() -> String {
         // Use the phase name from the API to select the correct icon
         let phaseName = uvService.currentMoonPhaseName.lowercased()
@@ -638,7 +754,8 @@ struct ContentView: View {
     private func contentFitsInScreen(geometry: GeometryProxy) -> Bool {
         // Estimate content height
         let estimatedHeight: CGFloat = 40 + 250 + 140 + 70 + 70 + 70 + 40 // header + UV + vitD + button + clothing + skin + padding
-        return estimatedHeight < geometry.size.height
+        let offlineBarHeight: CGFloat = uvService.isOfflineMode ? 50 : 0
+        return estimatedHeight + offlineBarHeight < geometry.size.height
     }
 }
 

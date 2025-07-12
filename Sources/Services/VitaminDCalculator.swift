@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import HealthKit
 import UserNotifications
+import WidgetKit
 
 enum ClothingLevel: Int, CaseIterable {
     case none = -1
@@ -99,6 +100,7 @@ class VitaminDCalculator: ObservableObject {
     private weak var uvService: UVService?
     private var healthKitSkinType: SkinType?
     private var lastUpdateTime: Date?
+    private let sharedDefaults = UserDefaults(suiteName: "group.sunday.widget")
     
     // UV response curve parameters
     private let uvHalfMax = 4.0  // UV index for 50% vitamin D synthesis rate (more linear)
@@ -169,6 +171,9 @@ class VitaminDCalculator: ObservableObject {
         
         // Cancel any pending burn warnings
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["burnWarning"])
+        
+        // Update widget data
+        updateWidgetData()
     }
     
     func updateUV(_ uvIndex: Double) {
@@ -211,6 +216,9 @@ class VitaminDCalculator: ObservableObject {
         
         // Final calculation: base * UV * clothing * skin type * age * quality * adaptation
         currentVitaminDRate = baseRate * uvFactor * exposureFactor * skinFactor * ageFactor * currentUVQualityFactor * currentAdaptationFactor
+        
+        // Update widget with new rate
+        updateWidgetData()
     }
     
     private func updateVitaminD(uvIndex: Double) {
@@ -226,6 +234,9 @@ class VitaminDCalculator: ObservableObject {
         
         // Add vitamin D based on actual elapsed time
         sessionVitaminD += currentVitaminDRate * (elapsed / 3600.0)
+        
+        // Update widget data
+        updateWidgetData()
     }
     
     func toggleSunExposure(uvIndex: Double) {
@@ -395,6 +406,28 @@ class VitaminDCalculator: ObservableObject {
             
             // Recalculate rate with new adaptation factor
             self.updateVitaminDRate(uvIndex: self.lastUV)
+        }
+    }
+    
+    private func updateWidgetData() {
+        guard let uvService = uvService else { return }
+        
+        sharedDefaults?.set(uvService.currentUV, forKey: "currentUV")
+        sharedDefaults?.set(isInSun, forKey: "isTracking")
+        sharedDefaults?.set(currentVitaminDRate, forKey: "vitaminDRate")
+        
+        // Calculate today's total including current session
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        healthManager?.readVitaminDIntake(from: startOfDay, to: endOfDay) { [weak self] total, error in
+            guard let self = self else { return }
+            let todaysTotal = total + self.sessionVitaminD
+            self.sharedDefaults?.set(todaysTotal, forKey: "todaysTotal")
+            
+            // Trigger widget update
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 }

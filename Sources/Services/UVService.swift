@@ -2,6 +2,8 @@ import Foundation
 import CoreLocation
 import Combine
 import UserNotifications
+import SwiftData
+import WidgetKit
 
 struct OpenMeteoResponse: Codable {
     let daily: DailyData
@@ -54,7 +56,14 @@ class UVService: ObservableObject {
     @Published var currentMoonPhaseName: String = ""
     @Published var isVitaminDWinter = false
     @Published var currentLatitude: Double = 0.0
+    @Published var isOfflineMode = false
+    @Published var lastSuccessfulUpdate: Date?
+    @Published var hasNoData = false
     private var lastMoonPhaseUpdate: Date?
+    private var modelContext: ModelContext?
+    private var lastRetryLocation: CLLocation?
+    private var networkMonitor: NetworkMonitor?
+    private var networkCancellable: AnyCancellable?
     
     var shouldShowTomorrowTimes: Bool {
         guard let todaySunset = todaySunset else { return false }
@@ -79,9 +88,42 @@ class UVService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var notificationScheduled = false
     
+    func setModelContext(_ context: ModelContext) {
+        self.modelContext = context
+    }
+    
+    func setNetworkMonitor(_ monitor: NetworkMonitor) {
+        self.networkMonitor = monitor
+        
+        // Observe network changes
+        networkCancellable = monitor.$isConnected
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isConnected in
+                guard let self = self else { return }
+                
+                if isConnected && self.isOfflineMode {
+                    // Clear offline mode immediately
+                    self.isOfflineMode = false
+                    // Network is back, fetch fresh data
+                    if let location = self.lastRetryLocation {
+                        self.fetchUVData(for: location)
+                    }
+                } else if !isConnected && !self.isOfflineMode {
+                    // Network disconnected, switch to offline mode if we have data
+                    if !self.hasNoData {
+                        self.isOfflineMode = true
+                    }
+                }
+            }
+    }
+    
     func fetchUVData(for location: CLLocation) {
         isLoading = true
         lastError = nil
+        
+        // Save location for potential retry
+        lastRetryLocation = location
         
         let latitude = location.coordinate.latitude
         let longitude = location.coordinate.longitude
@@ -89,6 +131,18 @@ class UVService: ObservableObject {
         
         // Store latitude for vitamin D winter calculation
         currentLatitude = abs(latitude)
+        
+        // Always update altitude from GPS, even if network fails
+        let validAltitude = altitude >= 0 ? altitude : 0
+        currentAltitude = validAltitude
+        let altitudeKm = validAltitude / 1000.0
+        let altitudeMultiplier = 1.0 + (altitudeKm * 0.1)
+        uvMultiplier = altitudeMultiplier
+        
+        // Share with widget
+        let sharedDefaults = UserDefaults(suiteName: "group.sunday.widget")
+        sharedDefaults?.set(validAltitude, forKey: "currentAltitude")
+        sharedDefaults?.set(altitudeMultiplier, forKey: "uvMultiplier")
         
         // Get current time components for UV interpolation
         let now = Date()
@@ -98,8 +152,8 @@ class UVService: ObservableObject {
         
         // Open-Meteo API - completely free, no API key needed!
         // Include elevation for more accurate UV calculations
-        // Get 2 days of data to have tomorrow's sunrise/sunset
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latitude)&longitude=\(longitude)&elevation=\(altitude)&daily=uv_index_max,uv_index_clear_sky_max,sunrise,sunset&hourly=uv_index,cloud_cover&timezone=auto&forecast_days=2"
+        // Get 5 days of data for offline caching
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latitude)&longitude=\(longitude)&elevation=\(altitude)&daily=uv_index_max,uv_index_clear_sky_max,sunrise,sunset&hourly=uv_index,cloud_cover&timezone=auto&forecast_days=5"
         
         guard let url = URL(string: urlString) else {
             lastError = "Invalid URL"
@@ -116,20 +170,15 @@ class UVService: ObservableObject {
                     self?.isLoading = false
                     if case .failure(let error) = completion {
                         self?.lastError = error.localizedDescription
-                        self?.mockUVData(for: location)
+                        // Try to load cached data in offline mode
+                        self?.loadCachedData(for: location)
                     }
                 },
                 receiveValue: { [weak self] response in
                     guard let self = self else { return }
                     
                     
-                    // Calculate altitude adjustment (UV increases ~10% per 1000m)
-                    // Note: location.altitude can be negative (below sea level) or -1 if unknown
-                    let validAltitude = location.altitude >= 0 ? location.altitude : 0
-                    self.currentAltitude = validAltitude
-                    let altitudeKm = validAltitude / 1000.0
-                    let altitudeMultiplier = 1.0 + (altitudeKm * 0.1)
-                    self.uvMultiplier = altitudeMultiplier
+                    // Altitude already updated at the start of fetchUVData
                     
                     // Get today's data (first item in arrays)
                     if let todayMaxUV = response.daily.uvIndexMax.first {
@@ -164,10 +213,18 @@ class UVService: ObservableObject {
                         self.scheduleSunNotifications()
                     }
                     
-                    // Fetch moon phase if not updated recently (update every 6 hours)
+                    // Always fetch moon phase on first load, then update every 6 hours
                     if self.lastMoonPhaseUpdate == nil || 
                        Date().timeIntervalSince(self.lastMoonPhaseUpdate!) > 21600 {
                         self.fetchMoonPhase(for: location)
+                    } else {
+                        // Ensure moon phase is shared with widget
+                        if !self.currentMoonPhaseName.isEmpty {
+                            UserDefaults(suiteName: "group.sunday.widget")?.set(self.currentMoonPhaseName, forKey: "moonPhaseName")
+                            WidgetCenter.shared.reloadAllTimelines()
+                        } else {
+                            self.fetchMoonPhase(for: location)
+                        }
                     }
                     
                     // Get current hour's UV index with interpolation
@@ -203,42 +260,19 @@ class UVService: ObservableObject {
                     
                     // Check for vitamin D winter conditions
                     self.checkVitaminDWinter()
+                    
+                    // Clear offline mode on successful fetch
+                    if self.isOfflineMode {
+                        self.isOfflineMode = false
+                    }
+                    
+                    // Cache the data for offline use
+                    self.cacheUVData(response: response, location: location)
+                    self.hasNoData = false
+                    self.lastSuccessfulUpdate = Date()
                 }
             )
             .store(in: &cancellables)
-    }
-    
-    private func mockUVData(for location: CLLocation) {
-        let hour = Calendar.current.component(.hour, from: Date())
-        let latitude = abs(location.coordinate.latitude)
-        currentLatitude = latitude
-        
-        // Handle altitude for mock data
-        let validAltitude = location.altitude >= 0 ? location.altitude : 0
-        currentAltitude = validAltitude
-        let altitudeKm = validAltitude / 1000.0
-        let altitudeMultiplier = 1.0 + (altitudeKm * 0.1)
-        uvMultiplier = altitudeMultiplier
-        
-        let basePeak = latitude < 23.5 ? 11.0 : latitude < 45 ? 8.0 : 6.0
-        maxUV = basePeak * altitudeMultiplier
-        currentUV = estimateCurrentUV(maxUV: maxUV, hour: hour)
-        
-        // Mock sunrise/sunset times based on latitude
-        let calendar = Calendar.current
-        var sunriseComponents = calendar.dateComponents([.year, .month, .day], from: Date())
-        var sunsetComponents = sunriseComponents
-        
-        // Simplified sunrise/sunset calculation
-        sunriseComponents.hour = latitude < 45 ? 6 : 7
-        sunsetComponents.hour = latitude < 45 ? 19 : 18
-        
-        todaySunrise = calendar.date(from: sunriseComponents)
-        todaySunset = calendar.date(from: sunsetComponents)
-        
-        calculateSafeExposureTimes()
-        scheduleSunNotifications()
-        checkVitaminDWinter()
     }
     
     private func estimateCurrentUV(maxUV: Double, hour: Int) -> Double {
@@ -346,15 +380,26 @@ class UVService: ObservableObject {
         let timestamp = Int(Date().timeIntervalSince1970)
         let urlString = "https://api.farmsense.net/v1/moonphases/?d=\(timestamp)"
         
-        
-        guard let url = URL(string: urlString) else { return }
+        guard let url = URL(string: urlString) else { 
+            return 
+        }
         
         URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             guard let self = self else { return }
             
-            if error != nil { return }
+            if let error = error { 
+                // Set a default moon phase on error
+                DispatchQueue.main.async {
+                    self.currentMoonPhaseName = "Waxing Crescent"
+                    UserDefaults(suiteName: "group.sunday.widget")?.set("Waxing Crescent", forKey: "moonPhaseName")
+                    WidgetCenter.shared.reloadAllTimelines()
+                }
+                return 
+            }
             
-            guard let data = data else { return }
+            guard let data = data else { 
+                return 
+            }
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
@@ -370,6 +415,10 @@ class UVService: ObservableObject {
                         // Store phase name
                         if let phaseName = moonData["Phase"] as? String {
                             self.currentMoonPhaseName = phaseName
+                            // Share with widget
+                            UserDefaults(suiteName: "group.sunday.widget")?.set(phaseName, forKey: "moonPhaseName")
+                            // Trigger widget update
+                            WidgetCenter.shared.reloadAllTimelines()
                         }
                         
                         // Update last fetch time
@@ -378,7 +427,12 @@ class UVService: ObservableObject {
                     }
                 }
             } catch {
-                // Silent error handling
+                // Set a default moon phase on error
+                DispatchQueue.main.async {
+                    self.currentMoonPhaseName = "Waxing Crescent"
+                    UserDefaults(suiteName: "group.sunday.widget")?.set("Waxing Crescent", forKey: "moonPhaseName")
+                    WidgetCenter.shared.reloadAllTimelines()
+                }
             }
         }.resume()
     }
@@ -401,6 +455,158 @@ class UVService: ObservableObject {
         } else {
             // Below 35° latitude - check if max UV is consistently below 3
             isVitaminDWinter = maxUV < 3.0
+        }
+    }
+    
+    private func cacheUVData(response: OpenMeteoResponse, location: CLLocation) {
+        guard let modelContext = modelContext else { return }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        
+        // Cache data for each day
+        for (index, dateString) in response.daily.time.enumerated() {
+            guard let date = formatter.date(from: dateString),
+                  index < response.daily.uvIndexMax.count else { continue }
+            
+            // Extract hourly data for this day
+            let startHour = index * 24
+            let endHour = min((index + 1) * 24, response.hourly?.uvIndex.count ?? 0)
+            
+            let hourlyUV = response.hourly?.uvIndex[startHour..<endHour].map { $0 } ?? []
+            let hourlyCloudCover = response.hourly?.cloudCover?[startHour..<endHour].map { $0 } ?? []
+            
+            // Parse sunrise/sunset
+            let sunriseString = response.daily.sunrise[safe: index] ?? ""
+            let sunsetString = response.daily.sunset[safe: index] ?? ""
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+            
+            let sunrise = formatter.date(from: sunriseString) ?? date
+            let sunset = formatter.date(from: sunsetString) ?? date
+            
+            // Create or update cached data
+            let cachedData = CachedUVData(
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                date: date,
+                hourlyUV: Array(hourlyUV),
+                hourlyCloudCover: Array(hourlyCloudCover),
+                maxUV: response.daily.uvIndexMax[index],
+                sunrise: sunrise,
+                sunset: sunset
+            )
+            
+            modelContext.insert(cachedData)
+        }
+        
+        // Save context
+        do {
+            try modelContext.save()
+        } catch {
+            // Failed to cache UV data
+        }
+    }
+    
+    private func loadCachedData(for location: CLLocation) {
+        
+        // Always ensure moon phase is available
+        if currentMoonPhaseName.isEmpty {
+            fetchMoonPhase(for: location)
+        }
+        
+        guard let modelContext = modelContext else {
+            isOfflineMode = true
+            hasNoData = true
+            return
+        }
+        
+        // Always update altitude from GPS since it still works offline
+        let validAltitude = location.altitude >= 0 ? location.altitude : 0
+        currentAltitude = validAltitude
+        let altitudeKm = validAltitude / 1000.0
+        let altitudeMultiplier = 1.0 + (altitudeKm * 0.1)
+        uvMultiplier = altitudeMultiplier
+        
+        // Share with widget
+        let sharedDefaults = UserDefaults(suiteName: "group.sunday.widget")
+        sharedDefaults?.set(validAltitude, forKey: "currentAltitude")
+        sharedDefaults?.set(altitudeMultiplier, forKey: "uvMultiplier")
+        
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)!
+        
+        // Store values in local constants for use in predicate
+        let targetLatitude = location.coordinate.latitude
+        let targetLongitude = location.coordinate.longitude
+        let startDate = today
+        let endDate = tomorrow
+        
+        // Fetch cached data for today and tomorrow
+        // Use approximate location matching (within ~1km)
+        let latTolerance = 0.01  // ~1.1km
+        let lonTolerance = 0.01
+        let minLat = targetLatitude - latTolerance
+        let maxLat = targetLatitude + latTolerance
+        let minLon = targetLongitude - lonTolerance
+        let maxLon = targetLongitude + lonTolerance
+        
+        let descriptor = FetchDescriptor<CachedUVData>(
+            predicate: #Predicate<CachedUVData> { data in
+                data.latitude >= minLat &&
+                data.latitude <= maxLat &&
+                data.longitude >= minLon &&
+                data.longitude <= maxLon &&
+                data.date >= startDate &&
+                data.date <= endDate  // Include tomorrow
+            },
+            sortBy: [SortDescriptor(\.date)]
+        )
+        
+        do {
+            let cachedData = try modelContext.fetch(descriptor)
+            
+            if let todayData = cachedData.first(where: { calendar.isDateInToday($0.date) }) {
+                // Use cached data
+                isOfflineMode = true
+                
+                // Save location for potential network restoration
+                lastRetryLocation = location
+                
+                // Set current UV based on cached hourly data
+                let hour = calendar.component(.hour, from: Date())
+                if hour < todayData.hourlyUV.count {
+                    currentUV = todayData.hourlyUV[hour] * uvMultiplier
+                    if hour < todayData.hourlyCloudCover.count {
+                        currentCloudCover = todayData.hourlyCloudCover[hour]
+                    }
+                }
+                
+                maxUV = todayData.maxUV * uvMultiplier
+                todaySunrise = todayData.sunrise
+                todaySunset = todayData.sunset
+                
+                // Get tomorrow's data if available
+                if let tomorrowData = cachedData.first(where: { calendar.isDateInTomorrow($0.date) }) {
+                    tomorrowMaxUV = tomorrowData.maxUV * uvMultiplier
+                    tomorrowSunrise = tomorrowData.sunrise
+                    tomorrowSunset = tomorrowData.sunset
+                }
+                
+                calculateSafeExposureTimes()
+                checkVitaminDWinter()
+            } else {
+                isOfflineMode = true
+                hasNoData = true
+                // Save location for potential retry
+                lastRetryLocation = location
+            }
+        } catch {
+            isOfflineMode = true
+            hasNoData = true
+            // Save location for potential retry
+            lastRetryLocation = location
         }
     }
 }

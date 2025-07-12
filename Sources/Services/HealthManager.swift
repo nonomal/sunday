@@ -184,4 +184,31 @@ class HealthManager: ObservableObject {
             }
         }
     }
+    
+    func readVitaminDIntake(from startDate: Date, to endDate: Date, completion: @escaping (Double, Error?) -> Void) {
+        let predicate = HKQuery.predicateForSamples(
+            withStart: startDate,
+            end: endDate,
+            options: .strictStartDate
+        )
+        
+        let query = HKStatisticsQuery(
+            quantityType: vitaminDType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { _, result, error in
+            DispatchQueue.main.async {
+                if let sum = result?.sumQuantity() {
+                    // Convert micrograms back to IU (1 mcg = 40 IU)
+                    let micrograms = sum.doubleValue(for: .gramUnit(with: .micro))
+                    let iuValue = micrograms * 40.0
+                    completion(iuValue, error)
+                } else {
+                    completion(0.0, error)
+                }
+            }
+        }
+        
+        healthStore.execute(query)
+    }
 }
