@@ -39,6 +39,10 @@ struct ContentView: View {
         .onAppear {
             setupApp()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            // Check for updated skin type when app returns to foreground
+            vitaminDCalculator.setHealthManager(healthManager)
+        }
         .onReceive(timer) { _ in
             updateData()
             loadTodaysTotal()
@@ -59,6 +63,10 @@ struct ContentView: View {
         .onChange(of: vitaminDCalculator.skinType) {
             // Update rate when skin type changes
             vitaminDCalculator.updateUV(uvService.currentUV)
+        }
+        .onChange(of: uvService.currentUV) { _, newUV in
+            // Update rate when UV changes
+            vitaminDCalculator.updateUV(newUV)
         }
     }
     
@@ -148,7 +156,7 @@ struct ContentView: View {
                 }
                 
                 VStack(spacing: 5) {
-                    Text("SAFE TIME")
+                    Text("SAFE LIMIT")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                     Text(uvService.currentUV == 0 ? "---" : formatSafeTime(safeExposureTime))
@@ -251,7 +259,7 @@ struct ContentView: View {
                     .symbolEffect(.pulse, isActive: vitaminDCalculator.isInSun)
                 
                 Text(vitaminDCalculator.isInSun ? "Stop" : 
-                     uvService.currentUV == 0 ? "No UV available" : "Track sun exposure")
+                     uvService.currentUV == 0 ? "No UV available" : "Track UV exposure")
                     .font(.system(size: 18, weight: .semibold))
             }
             .foregroundColor(.white)
@@ -301,6 +309,12 @@ struct ContentView: View {
                     .tracking(1.5)
                 
                 HStack {
+                    if vitaminDCalculator.skinTypeFromHealth {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    
                     Text(vitaminDCalculator.skinType.description)
                         .font(.system(size: 16, weight: .medium))
                     
@@ -435,10 +449,16 @@ struct ContentView: View {
         loadTodaysTotal()
         currentGradientColors = gradientColors
         
+        // Connect HealthManager to VitaminDCalculator
+        vitaminDCalculator.setHealthManager(healthManager)
+        
         // Fetch UV data on startup
         if let location = locationManager.location {
             uvService.fetchUVData(for: location)
         }
+        
+        // Initialize vitamin D rate with current UV (even if 0)
+        vitaminDCalculator.updateUV(uvService.currentUV)
     }
     
     private func updateData() {
@@ -610,6 +630,7 @@ struct SkinTypePicker: View {
     @Binding var selection: SkinType
     @Environment(\.dismiss) var dismiss
     @Environment(\.colorScheme) var colorScheme
+    @EnvironmentObject var vitaminDCalculator: VitaminDCalculator
     
     var body: some View {
         NavigationView {
@@ -652,9 +673,23 @@ struct SkinTypePicker: View {
                     }
                 }
             }
-            .navigationTitle("Skin Type")
+            .navigationTitle("Fitzpatrick Skin Type")
             .navigationBarItems(trailing: Button("Done") { dismiss() })
             .preferredColorScheme(.dark)
+            .safeAreaInset(edge: .bottom) {
+                if vitaminDCalculator.skinTypeFromHealth {
+                    HStack {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 14))
+                        Text("Synced from Apple Health")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color(UIColor.secondarySystemBackground))
+                }
+            }
         }
         .presentationBackground(Color(UIColor.systemBackground).opacity(0.95))
     }

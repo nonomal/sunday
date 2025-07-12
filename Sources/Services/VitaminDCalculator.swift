@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import HealthKit
 
 enum ClothingLevel: Int, CaseIterable {
     case none = -1
@@ -10,7 +11,7 @@ enum ClothingLevel: Int, CaseIterable {
     
     var description: String {
         switch self {
-        case .none: return "No clothing"
+        case .none: return "Nude!"
         case .minimal: return "Minimal (swimwear)"
         case .light: return "Light (shorts & t-shirt)"
         case .moderate: return "Moderate (long sleeves)"
@@ -70,17 +71,36 @@ class VitaminDCalculator: ObservableObject {
     @Published var skinType: SkinType = .type3 {
         didSet {
             UserDefaults.standard.set(skinType.rawValue, forKey: "userSkinType")
+            // If user manually changes skin type, it's no longer from Health
+            if !isSettingFromHealth {
+                skinTypeFromHealth = false
+            }
         }
     }
     @Published var currentVitaminDRate: Double = 0.0
     @Published var sessionVitaminD: Double = 0.0
     @Published var sessionStartTime: Date?
+    @Published var skinTypeFromHealth = false
+    @Published var userAge: Int = 30 {
+        didSet {
+            UserDefaults.standard.set(userAge, forKey: "userAge")
+        }
+    }
+    @Published var ageFromHealth = false
     
     private var timer: Timer?
     private var lastUV: Double = 0.0
+    private var healthManager: HealthManager?
+    private var isSettingFromHealth = false
     
     init() {
         loadUserPreferences()
+    }
+    
+    func setHealthManager(_ healthManager: HealthManager) {
+        self.healthManager = healthManager
+        checkHealthKitSkinType()
+        checkHealthKitAge()
     }
     
     private func loadUserPreferences() {
@@ -92,6 +112,10 @@ class VitaminDCalculator: ObservableObject {
         if let savedSkinType = UserDefaults.standard.object(forKey: "userSkinType") as? Int,
            let skin = SkinType(rawValue: savedSkinType) {
             skinType = skin
+        }
+        
+        if let savedAge = UserDefaults.standard.object(forKey: "userAge") as? Int {
+            userAge = savedAge
         }
     }
     
@@ -137,8 +161,20 @@ class VitaminDCalculator: ObservableObject {
         // Skin type affects vitamin D synthesis efficiency
         let skinFactor = skinType.vitaminDFactor
         
-        // Final calculation: base * UV * clothing * skin type
-        currentVitaminDRate = baseRate * uvFactor * exposureFactor * skinFactor
+        // Age factor: vitamin D synthesis decreases with age
+        // ~25% synthesis at age 70 compared to age 20
+        let ageFactor: Double
+        if userAge <= 20 {
+            ageFactor = 1.0
+        } else if userAge >= 70 {
+            ageFactor = 0.25
+        } else {
+            // Linear decrease: lose ~1.5% per year after age 20
+            ageFactor = max(0.25, 1.0 - Double(userAge - 20) * 0.015)
+        }
+        
+        // Final calculation: base * UV * clothing * skin type * age
+        currentVitaminDRate = baseRate * uvFactor * exposureFactor * skinFactor * ageFactor
     }
     
     private func updateVitaminD(uvIndex: Double) {
@@ -156,6 +192,55 @@ class VitaminDCalculator: ObservableObject {
             startSession(uvIndex: uvIndex)
         } else {
             stopSession()
+        }
+    }
+    
+    private func checkHealthKitSkinType() {
+        healthManager?.getFitzpatrickSkinType { [weak self] hkSkinType in
+            guard let self = self, let hkSkinType = hkSkinType else { return }
+            
+            // Map HealthKit Fitzpatrick skin type to our SkinType enum
+            let mappedSkinType: SkinType?
+            switch hkSkinType {
+            case .I:
+                mappedSkinType = .type1
+            case .II:
+                mappedSkinType = .type2
+            case .III:
+                mappedSkinType = .type3
+            case .IV:
+                mappedSkinType = .type4
+            case .V:
+                mappedSkinType = .type5
+            case .VI:
+                mappedSkinType = .type6
+            case .notSet:
+                mappedSkinType = nil
+            @unknown default:
+                mappedSkinType = nil
+            }
+            
+            // If we got a valid skin type from Health, use it
+            if let mappedSkinType = mappedSkinType {
+                self.isSettingFromHealth = true
+                self.skinType = mappedSkinType
+                self.skinTypeFromHealth = true
+                self.isSettingFromHealth = false
+            } else {
+                self.skinTypeFromHealth = false
+            }
+        }
+    }
+    
+    private func checkHealthKitAge() {
+        healthManager?.getAge { [weak self] age in
+            guard let self = self, let age = age else { return }
+            
+            self.userAge = age
+            self.ageFromHealth = true
+            
+            // Recalculate vitamin D rate with new age
+            self.updateVitaminDRate(uvIndex: self.lastUV)
         }
     }
 }

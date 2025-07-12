@@ -7,6 +7,8 @@ class HealthManager: ObservableObject {
     
     private let healthStore = HKHealthStore()
     private let vitaminDType = HKQuantityType.quantityType(forIdentifier: .dietaryVitaminD)!
+    private let fitzpatrickSkinType = HKObjectType.characteristicType(forIdentifier: .fitzpatrickSkinType)!
+    private let dateOfBirthType = HKObjectType.characteristicType(forIdentifier: .dateOfBirth)!
     
     init() {
         checkAuthorizationStatus()
@@ -19,7 +21,7 @@ class HealthManager: ObservableObject {
         }
         
         let typesToWrite: Set<HKSampleType> = [vitaminDType]
-        let typesToRead: Set<HKObjectType> = [vitaminDType]
+        let typesToRead: Set<HKObjectType> = [vitaminDType, fitzpatrickSkinType, dateOfBirthType]
         
         healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead) { [weak self] success, error in
             DispatchQueue.main.async {
@@ -94,5 +96,46 @@ class HealthManager: ObservableObject {
         }
         
         healthStore.execute(query)
+    }
+    
+    func getFitzpatrickSkinType(completion: @escaping (HKFitzpatrickSkinType?) -> Void) {
+        do {
+            let skinType = try healthStore.fitzpatrickSkinType()
+            DispatchQueue.main.async {
+                completion(skinType.skinType)
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.lastError = error.localizedDescription
+                completion(nil)
+            }
+        }
+    }
+    
+    func getAge(completion: @escaping (Int?) -> Void) {
+        do {
+            let dateOfBirth = try healthStore.dateOfBirthComponents()
+            let calendar = Calendar.current
+            let now = Date()
+            
+            // Calculate age from date of birth
+            if let birthDate = calendar.date(from: dateOfBirth) {
+                let ageComponents = calendar.dateComponents([.year], from: birthDate, to: now)
+                let age = ageComponents.year
+                
+                DispatchQueue.main.async {
+                    completion(age)
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.lastError = error.localizedDescription
+                completion(nil)
+            }
+        }
     }
 }
