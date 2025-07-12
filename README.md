@@ -14,6 +14,7 @@ UV tracking and vitamin D calculator for iOS.
 - Sunrise/sunset times
 - Saves to Apple Health
 - No API keys required
+- Small and medium widgets for your home screen
 
 ## Requirements
 
