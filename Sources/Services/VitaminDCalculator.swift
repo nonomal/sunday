@@ -395,7 +395,7 @@ class VitaminDCalculator: ObservableObject {
             guard granted else { return }
             
             let content = UNMutableNotificationContent()
-            content.title = "⚠️ Approaching burn limit!"
+            content.title = "🔥 Approaching burn limit!"
             content.body = "You've reached 80% of your burn threshold. Consider seeking shade."
             content.sound = .default
             

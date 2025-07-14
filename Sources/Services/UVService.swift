@@ -331,7 +331,7 @@ class UVService: ObservableObject {
             guard granted else { return }
             
             // Remove old notifications
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["sunrise", "sunset", "safeTimeReached"])
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["sunrise", "sunset", "safeTimeReached", "solarNoon"])
             
             DispatchQueue.main.async {
                 self.scheduleNotification(
@@ -347,6 +347,25 @@ class UVService: ObservableObject {
                     body: "Check your vitamin D progress in Sun Day.",
                     identifier: "sunset"
                 )
+                
+                // Schedule solar noon notification (30 minutes before)
+                if let sunrise = self.todaySunrise, let sunset = self.todaySunset {
+                    // Calculate solar noon as midpoint between sunrise and sunset
+                    let sunriseTime = sunrise.timeIntervalSince1970
+                    let sunsetTime = sunset.timeIntervalSince1970
+                    let solarNoonTime = (sunriseTime + sunsetTime) / 2.0
+                    let solarNoon = Date(timeIntervalSince1970: solarNoonTime)
+                    
+                    // Schedule notification 30 minutes before solar noon
+                    let notificationTime = solarNoon.addingTimeInterval(-1800) // 30 minutes = 1800 seconds
+                    
+                    self.scheduleNotification(
+                        at: notificationTime,
+                        title: "☀️ Solar noon approaching!",
+                        body: "Peak UV in 30 minutes (UV \(Int(self.maxUV))). Perfect time for vitamin D!",
+                        identifier: "solarNoon"
+                    )
+                }
                 
                 UserDefaults.standard.set(Date(), forKey: lastScheduledKey)
                 self.notificationScheduled = true
