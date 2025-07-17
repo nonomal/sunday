@@ -41,10 +41,31 @@ struct Provider: IntentTimelineProvider {
             moonPhaseName = "Waxing Gibbous"
         }
 
-        // Generate a timeline consisting of five entries an hour apart, starting from the current date.
+        // Generate timeline entries at key times when gradient changes
         let currentDate = Date()
-        for hourOffset in 0 ..< 5 {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
+        let calendar = Calendar.current
+        
+        // Create entries at gradient transition times
+        var entryDates: [Date] = [currentDate]
+        
+        // Add entries for the next gradient transitions
+        let gradientTransitionHours = [5.0, 6.0, 6.5, 7.0, 8.0, 10.0, 16.0, 17.0, 18.5, 19.5, 20.5, 22.0]
+        
+        for transitionHour in gradientTransitionHours {
+            let transitionComponents = DateComponents(hour: Int(transitionHour), minute: Int((transitionHour.truncatingRemainder(dividingBy: 1)) * 60))
+            if let transitionDate = calendar.nextDate(after: currentDate, matching: transitionComponents, matchingPolicy: .nextTime) {
+                if transitionDate.timeIntervalSince(currentDate) < 24 * 60 * 60 { // Within 24 hours
+                    entryDates.append(transitionDate)
+                }
+            }
+        }
+        
+        // Sort and limit to reasonable number of entries
+        entryDates.sort()
+        entryDates = Array(entryDates.prefix(8))
+        
+        // Create entries
+        for entryDate in entryDates {
             let entry = SimpleEntry(date: entryDate, uvIndex: uvIndex, todaysTotal: todaysTotal, isTracking: isTracking, vitaminDRate: vitaminDRate, locationName: locationName, moonPhaseName: moonPhaseName, altitude: altitude, uvMultiplier: uvMultiplier, cloudCover: cloudCover, configuration: configuration)
             entries.append(entry)
         }

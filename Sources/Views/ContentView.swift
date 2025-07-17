@@ -142,6 +142,11 @@ struct ContentView: View {
                 // Also update data immediately when returning to foreground
                 updateData()
                 loadTodaysTotal()
+                // Update gradient immediately when returning to foreground
+                let newColors = gradientColors
+                if newColors != currentGradientColors {
+                    currentGradientColors = newColors
+                }
                 // Restart location updates when app becomes active
                 locationManager.startUpdatingLocation()
             case .inactive, .background:
@@ -1014,11 +1019,13 @@ struct InfoSheet: View {
                                 detail: vitaminDCalculator.skinType.description
                             )
                             
-                            FactorRow(
-                                label: "Age Factor",
-                                value: String(format: "%.0f%%", calculateAgeFactor() * 100),
-                                detail: "Age \(vitaminDCalculator.userAge)"
-                            )
+                            if vitaminDCalculator.userAge != nil {
+                                FactorRow(
+                                    label: "Age Factor",
+                                    value: String(format: "%.0f%%", calculateAgeFactor() * 100),
+                                    detail: "Age \(vitaminDCalculator.userAge!)"
+                                )
+                            }
                             
                             FactorRow(
                                 label: "Adaptation",
@@ -1080,7 +1087,10 @@ struct InfoSheet: View {
     }
     
     private func calculateAgeFactor() -> Double {
-        let age = vitaminDCalculator.userAge
+        guard let age = vitaminDCalculator.userAge else {
+            return 1.0
+        }
+        
         if age <= 20 {
             return 1.0
         } else if age >= 70 {

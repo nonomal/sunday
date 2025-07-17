@@ -85,9 +85,13 @@ class VitaminDCalculator: ObservableObject {
     @Published var sessionStartTime: Date?
     @Published var skinTypeFromHealth = false
     @Published var cumulativeMEDFraction: Double = 0.0
-    @Published var userAge: Int = 30 {
+    @Published var userAge: Int? = nil {
         didSet {
-            UserDefaults.standard.set(userAge, forKey: "userAge")
+            if let age = userAge {
+                UserDefaults.standard.set(age, forKey: "userAge")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "userAge")
+            }
         }
     }
     @Published var ageFromHealth = false
@@ -153,6 +157,8 @@ class VitaminDCalculator: ObservableObject {
         
         if let savedAge = UserDefaults.standard.object(forKey: "userAge") as? Int {
             userAge = savedAge
+        } else {
+            userAge = nil
         }
     }
     
@@ -252,14 +258,20 @@ class VitaminDCalculator: ObservableObject {
         
         // Age factor: vitamin D synthesis decreases with age
         // ~25% synthesis at age 70 compared to age 20
+        // Only apply if we have age data from Apple Health
         let ageFactor: Double
-        if userAge <= 20 {
-            ageFactor = 1.0
-        } else if userAge >= 70 {
-            ageFactor = 0.25
+        if let age = userAge {
+            if age <= 20 {
+                ageFactor = 1.0
+            } else if age >= 70 {
+                ageFactor = 0.25
+            } else {
+                // Linear decrease: lose ~1% per year after age 20
+                ageFactor = max(0.25, 1.0 - Double(age - 20) * 0.01)
+            }
         } else {
-            // Linear decrease: lose ~1% per year after age 20
-            ageFactor = max(0.25, 1.0 - Double(userAge - 20) * 0.01)
+            // No age data available, don't apply age factor
+            ageFactor = 1.0
         }
         
         // Calculate UV quality factor based on time of day
@@ -342,12 +354,17 @@ class VitaminDCalculator: ObservableObject {
     
     private func checkHealthKitAge() {
         healthManager?.getAge { [weak self] age in
-            guard let self = self, let age = age else { return }
+            guard let self = self else { return }
             
-            self.userAge = age
-            self.ageFromHealth = true
+            if let age = age {
+                self.userAge = age
+                self.ageFromHealth = true
+            } else {
+                self.userAge = nil
+                self.ageFromHealth = false
+            }
             
-            // Recalculate vitamin D rate with new age
+            // Recalculate vitamin D rate with new age (or without it)
             self.updateVitaminDRate(uvIndex: self.lastUV)
         }
     }
