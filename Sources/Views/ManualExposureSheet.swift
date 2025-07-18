@@ -28,8 +28,13 @@ struct ManualExposureSheet: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
+            ZStack {
+                // Solid background to prevent transparency
+                Color(UIColor.systemBackground)
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
                     // Instructions
                     Text("Log past sun exposure from today")
                         .font(.headline)
@@ -48,6 +53,7 @@ struct ManualExposureSheet: View {
                             DatePicker("", selection: $startTime, in: timeRange, displayedComponents: [.hourAndMinute])
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
+                                .background(Color(UIColor.systemBackground))
                                 .onChange(of: startTime) { _, newValue in
                                     // Ensure end time is after start time
                                     if endTime <= newValue {
@@ -69,6 +75,7 @@ struct ManualExposureSheet: View {
                             DatePicker("", selection: $endTime, in: startTime...Date(), displayedComponents: [.hourAndMinute])
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
+                                .background(Color(UIColor.systemBackground))
                                 .onChange(of: endTime) { _, _ in
                                     // Recalculate vitamin D
                                     calculateVitaminD()
@@ -190,6 +197,7 @@ struct ManualExposureSheet: View {
                 }
                 .padding()
             }
+            }
             .navigationTitle("Log Past Exposure")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(
@@ -201,6 +209,7 @@ struct ManualExposureSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Color(UIColor.systemBackground))
         .onAppear {
             // Set default times - 1 hour ago to now
             let now = Date()
