@@ -2,11 +2,14 @@ import Foundation
 import CoreLocation
 import WidgetKit
 import Combine
+import UIKit
 
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var location: CLLocation?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var isUpdatingLocation = false
+    @Published var showLocationDeniedAlert = false
+    @Published var locationServicesEnabled = true
     @Published var locationName: String = "" {
         didSet {
             // Share location name with widget
@@ -125,12 +128,43 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
+        locationServicesEnabled = CLLocationManager.locationServicesEnabled()
         
         switch authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:
             startUpdatingLocation()
-        default:
+            showLocationDeniedAlert = false
+        case .denied, .restricted:
             stopUpdatingLocation()
+            // Only show alert if we haven't shown it before in this session
+            if !UserDefaults.standard.bool(forKey: "hasShownLocationDeniedAlert") {
+                showLocationDeniedAlert = true
+                UserDefaults.standard.set(true, forKey: "hasShownLocationDeniedAlert")
+            }
+        case .notDetermined:
+            // Will be prompted when we request authorization
+            break
+        @unknown default:
+            break
+        }
+    }
+    
+    func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+    
+    func resetLocationDeniedAlert() {
+        // Reset the flag when app becomes active again
+        UserDefaults.standard.set(false, forKey: "hasShownLocationDeniedAlert")
+    }
+    
+    var locationDeniedMessage: String {
+        if !locationServicesEnabled {
+            return "Location Services are disabled. Please enable Location Services in Settings > Privacy & Security > Location Services."
+        } else {
+            return "Sun Day needs your location to determine UV levels and calculate vitamin D production. Please enable location access in Settings."
         }
     }
     

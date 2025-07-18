@@ -41,24 +41,43 @@ struct ContentView: View {
                             .font(.system(size: 24, weight: .semibold))
                             .foregroundColor(.white)
                         
-                        Text("Connect to the internet to fetch UV data")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white.opacity(0.8))
-                            .multilineTextAlignment(.center)
-                        
-                        if locationManager.location != nil {
+                        if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
+                            Text("Location access is required to get UV data")
+                                .font(.system(size: 16))
+                                .foregroundColor(.white.opacity(0.8))
+                                .multilineTextAlignment(.center)
+                            
                             Button(action: {
-                                if let location = locationManager.location {
-                                    uvService.fetchUVData(for: location)
-                                }
+                                locationManager.openSettings()
                             }) {
-                                Text("Retry")
+                                Text("Open Settings")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 30)
                                     .padding(.vertical, 12)
                                     .background(Color.white.opacity(0.2))
                                     .cornerRadius(25)
+                            }
+                        } else {
+                            Text("Connect to the internet to fetch UV data")
+                                .font(.system(size: 16))
+                                .foregroundColor(.white.opacity(0.8))
+                                .multilineTextAlignment(.center)
+                            
+                            if locationManager.location != nil {
+                                Button(action: {
+                                    if let location = locationManager.location {
+                                        uvService.fetchUVData(for: location)
+                                    }
+                                }) {
+                                    Text("Retry")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 30)
+                                        .padding(.vertical, 12)
+                                        .background(Color.white.opacity(0.2))
+                                        .cornerRadius(25)
+                                }
                             }
                         }
                     }
@@ -181,6 +200,18 @@ struct ContentView: View {
         .onOpenURL { url in
             handleURL(url)
         }
+        .alert("Location Access Required", isPresented: $locationManager.showLocationDeniedAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Open Settings") {
+                locationManager.openSettings()
+            }
+        } message: {
+            Text(locationManager.locationDeniedMessage)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            // Reset the alert flag when app becomes active (user may have changed settings)
+            locationManager.resetLocationDeniedAlert()
+        }
     }
     
     private var backgroundGradient: some View {
@@ -247,14 +278,37 @@ struct ContentView: View {
     
     private var uvSection: some View {
         VStack(spacing: 8) {
-            Text("UV INDEX")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundColor(.white.opacity(0.7))
-                .tracking(1.5)
-            
-            Text(String(format: "%.1f", uvService.currentUV))
-                .font(.system(size: 72, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+            if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
+                VStack(spacing: 10) {
+                    Image(systemName: "location.slash")
+                        .font(.system(size: 40))
+                        .foregroundColor(.white.opacity(0.7))
+                    Text("LOCATION ACCESS REQUIRED")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .tracking(1.5)
+                    Button(action: {
+                        locationManager.openSettings()
+                    }) {
+                        Text("Enable Location")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.2))
+                            .cornerRadius(20)
+                    }
+                }
+            } else {
+                Text("UV INDEX")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.7))
+                    .tracking(1.5)
+                
+                Text(String(format: "%.1f", uvService.currentUV))
+                    .font(.system(size: 72, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+            }
             
             HStack(spacing: 15) {
                 VStack(spacing: 3) {
@@ -384,6 +438,7 @@ struct ContentView: View {
                 .background(Color.yellow.opacity(0.2))
                 .cornerRadius(10)
                 .padding(.top, 8)
+            }
             }
         }
         .padding(.vertical, 20)
