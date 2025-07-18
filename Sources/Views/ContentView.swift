@@ -439,7 +439,6 @@ struct ContentView: View {
                 .cornerRadius(10)
                 .padding(.top, 8)
             }
-            }
         }
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity)
