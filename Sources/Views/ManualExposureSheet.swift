@@ -11,8 +11,7 @@ struct ManualExposureSheet: View {
     @State private var startTime = Date()
     @State private var endTime = Date()
     @State private var selectedClothing: ClothingLevel = .light
-    @State private var selectedSkinType: SkinType = .type3
-    @State private var showSkinTypePicker = false
+    @State private var showClothingPicker = false
     @State private var isCalculating = false
     @State private var calculatedVitaminD: Double = 0
     @State private var errorMessage: String?
@@ -90,49 +89,15 @@ struct ManualExposureSheet: View {
                     }
                     
                     // Clothing selection
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("What were you wearing?")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                        
-                        ForEach(ClothingLevel.allCases, id: \.self) { level in
-                            Button(action: { 
-                                selectedClothing = level 
-                                calculateVitaminD()
-                            }) {
-                                HStack {
-                                    Image(systemName: level.iconName)
-                                        .font(.system(size: 24))
-                                        .frame(width: 30)
-                                    
-                                    Text(level.name)
-                                        .font(.system(size: 16))
-                                    
-                                    Spacer()
-                                    
-                                    if selectedClothing == level {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-                                .padding()
-                                .background(selectedClothing == level ? Color.blue.opacity(0.1) : Color.gray.opacity(0.1))
-                                .cornerRadius(10)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                    
-                    // Skin type selection
-                    Button(action: { showSkinTypePicker.toggle() }) {
+                    Button(action: { showClothingPicker.toggle() }) {
                         VStack(spacing: 10) {
-                            Text("SKIN TYPE")
+                            Text("CLOTHING")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.white.opacity(0.7))
                                 .tracking(1.5)
                             
                             HStack {
-                                Text(selectedSkinType.description)
+                                Text(selectedClothing.description)
                                     .font(.system(size: 16, weight: .medium))
                                 
                                 Image(systemName: "chevron.down")
@@ -145,10 +110,12 @@ struct ManualExposureSheet: View {
                         .background(Color.black.opacity(0.2))
                         .cornerRadius(15)
                     }
-                    .sheet(isPresented: $showSkinTypePicker) {
-                        SkinTypePicker(selection: $selectedSkinType)
+                    .sheet(isPresented: $showClothingPicker) {
+                        ClothingPicker(selection: $selectedClothing)
+                            .presentationDetents([.medium])
+                            .presentationDragIndicator(.visible)
                     }
-                    .onChange(of: selectedSkinType) { _, _ in
+                    .onChange(of: selectedClothing) { _, _ in
                         calculateVitaminD()
                     }
                     
@@ -240,9 +207,6 @@ struct ManualExposureSheet: View {
             startTime = now.addingTimeInterval(-3600) // 1 hour ago
             endTime = now
             
-            // Use current skin type from calculator
-            selectedSkinType = vitaminDCalculator.skinType
-            
             // Calculate initial vitamin D
             calculateVitaminD()
         }
@@ -296,7 +260,7 @@ struct ManualExposureSheet: View {
                     let vitaminD = vitaminDCalculator.calculateVitaminD(
                         uvIndex: uvIndex,
                         exposureMinutes: duration,
-                        skinType: selectedSkinType,
+                        skinType: vitaminDCalculator.skinType,
                         clothingLevel: selectedClothing
                     )
                     
@@ -411,25 +375,3 @@ struct ManualExposureSheet: View {
     }
 }
 
-// Extension to support ClothingLevel
-extension ClothingLevel {
-    var iconName: String {
-        switch self {
-        case .none: return "figure.stand.dress.line.vertical.figure"
-        case .minimal: return "sun.max"
-        case .light: return "tshirt"
-        case .moderate: return "figure.stand"
-        case .heavy: return "person.fill"
-        }
-    }
-    
-    var name: String {
-        switch self {
-        case .none: return "Nude"
-        case .minimal: return "Minimal (Swimwear)"
-        case .light: return "Light (T-shirt & Shorts)"
-        case .moderate: return "Moderate (Pants & T-shirt)"
-        case .heavy: return "Heavy (Long sleeves & Pants)"
-        }
-    }
-}
