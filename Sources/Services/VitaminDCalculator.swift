@@ -16,9 +16,9 @@ enum ClothingLevel: Int, CaseIterable {
         switch self {
         case .none: return "Nude!"
         case .minimal: return "Minimal (swimwear)"
-        case .light: return "Light (shorts & t-shirt)"
-        case .moderate: return "Moderate (long sleeves)"
-        case .heavy: return "Heavy (fully covered)"
+        case .light: return "Light (shorts, tee)"
+        case .moderate: return "Moderate (pants, tee)"
+        case .heavy: return "Heavy (pants, sleeves)"
         }
     }
     
@@ -26,9 +26,9 @@ enum ClothingLevel: Int, CaseIterable {
         switch self {
         case .none: return 1.0
         case .minimal: return 0.80
-        case .light: return 0.40
-        case .moderate: return 0.15
-        case .heavy: return 0.05
+        case .light: return 0.50
+        case .moderate: return 0.30
+        case .heavy: return 0.10
         }
     }
 }
@@ -310,6 +310,54 @@ class VitaminDCalculator: ObservableObject {
         } else {
             stopSession()
         }
+    }
+    
+    func addManualEntry(amount: Double) {
+        // Simply add the manual entry amount to today's session vitamin D
+        // This will be saved to Health by the view that calls this
+        sessionVitaminD += amount
+        
+        // Update widget data to reflect the new total
+        updateWidgetData()
+    }
+    
+    func calculateVitaminD(uvIndex: Double, exposureMinutes: Double, skinType: SkinType, clothingLevel: ClothingLevel) -> Double {
+        // Base rate: 21000 IU/hr for Type 3 skin with minimal clothing (80% exposure)
+        let baseRate = 21000.0
+        
+        // UV factor: Michaelis-Menten-like saturation curve
+        let uvFactor = (uvIndex * uvMaxFactor) / (uvHalfMax + uvIndex)
+        
+        // Exposure based on clothing coverage
+        let exposureFactor = clothingLevel.exposureFactor
+        
+        // Skin type affects vitamin D synthesis efficiency
+        let skinFactor = skinType.vitaminDFactor
+        
+        // Age factor: vitamin D synthesis decreases with age
+        let ageFactor: Double
+        if let age = userAge {
+            if age <= 20 {
+                ageFactor = 1.0
+            } else if age >= 70 {
+                ageFactor = 0.25
+            } else {
+                // Linear decrease: lose ~1% per year after age 20
+                ageFactor = max(0.25, 1.0 - Double(age - 20) * 0.01)
+            }
+        } else {
+            // No age data available, don't apply age factor
+            ageFactor = 1.0
+        }
+        
+        // Current adaptation factor (use current if available, otherwise 1.0)
+        let adaptationFactor = currentAdaptationFactor
+        
+        // Calculate hourly rate
+        let hourlyRate = baseRate * uvFactor * exposureFactor * skinFactor * ageFactor * adaptationFactor
+        
+        // Convert to amount for given minutes
+        return hourlyRate * (exposureMinutes / 60.0)
     }
     
     private func checkHealthKitSkinType() {

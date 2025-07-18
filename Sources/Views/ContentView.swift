@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var todaysTotal: Double = 0
     @State private var currentGradientColors: [Color] = []
     @State private var showInfoSheet = false
+    @State private var showManualExposureSheet = false
     @State private var lastUVUpdate: Date = UserDefaults.standard.object(forKey: "lastUVUpdate") as? Date ?? Date()
     @State private var timerCancellable: AnyCancellable?
     
@@ -392,32 +393,53 @@ struct ContentView: View {
     }
     
     private var exposureToggle: some View {
-        Button(action: {
-            // Haptic feedback
-            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-            impactFeedback.impactOccurred()
-            
-            vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
-        }) {
-            HStack {
-                Image(systemName: vitaminDCalculator.isInSun ? "sun.max.fill" : 
-                                 uvService.currentUV == 0 ? moonPhaseIcon() : "sun.max")
-                    .font(.system(size: 24))
-                    .symbolEffect(.pulse, isActive: vitaminDCalculator.isInSun)
+        HStack(spacing: 12) {
+            // Main tracking button
+            Button(action: {
+                // Haptic feedback
+                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                impactFeedback.impactOccurred()
                 
-                Text(vitaminDCalculator.isInSun ? "End" : 
-                     uvService.currentUV == 0 ? "No UV available" : "Begin")
-                    .font(.system(size: 18, weight: .semibold))
+                vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+            }) {
+                HStack {
+                    Image(systemName: vitaminDCalculator.isInSun ? "sun.max.fill" : 
+                                     uvService.currentUV == 0 ? moonPhaseIcon() : "sun.max")
+                        .font(.system(size: 24))
+                        .symbolEffect(.pulse, isActive: vitaminDCalculator.isInSun)
+                    
+                    Text(vitaminDCalculator.isInSun ? "End" : 
+                         uvService.currentUV == 0 ? "No UV available" : "Begin")
+                        .font(.system(size: 18, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                .background(vitaminDCalculator.isInSun ? Color.yellow.opacity(0.3) : Color.black.opacity(0.2))
+                .cornerRadius(15)
+                .animation(.easeInOut(duration: 0.3), value: vitaminDCalculator.isInSun)
             }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
-            .background(vitaminDCalculator.isInSun ? Color.yellow.opacity(0.3) : Color.black.opacity(0.2))
-            .cornerRadius(15)
-            .animation(.easeInOut(duration: 0.3), value: vitaminDCalculator.isInSun)
+            .disabled(uvService.currentUV == 0 && !vitaminDCalculator.isInSun)
+            .opacity(uvService.currentUV == 0 && !vitaminDCalculator.isInSun ? 0.6 : 1.0)
+            
+            // Manual entry button
+            Button(action: {
+                // Haptic feedback
+                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                impactFeedback.impactOccurred()
+                
+                showManualExposureSheet = true
+            }) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 22))
+                    .foregroundColor(.white)
+                    .frame(width: 60, height: 60)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(15)
+            }
+            .disabled(vitaminDCalculator.isInSun) // Can't add manual entry while tracking
+            .opacity(vitaminDCalculator.isInSun ? 0.4 : 1.0)
         }
-        .disabled(uvService.currentUV == 0 && !vitaminDCalculator.isInSun)
-        .opacity(uvService.currentUV == 0 && !vitaminDCalculator.isInSun ? 0.6 : 1.0)
     }
     
     private var clothingSection: some View {
@@ -482,6 +504,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showInfoSheet) {
             InfoSheet()
+        }
+        .sheet(isPresented: $showManualExposureSheet) {
+            ManualExposureSheet()
         }
     }
     
