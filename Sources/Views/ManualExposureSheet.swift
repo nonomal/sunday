@@ -11,9 +11,10 @@ struct ManualExposureSheet: View {
     @State private var startTime = Date()
     @State private var endTime = Date()
     @State private var selectedClothing: ClothingLevel = .light
+    @State private var selectedSkinType: SkinType = .type3
+    @State private var showSkinTypePicker = false
     @State private var isCalculating = false
     @State private var calculatedVitaminD: Double = 0
-    @State private var showResult = false
     @State private var errorMessage: String?
     @State private var uvDataPoints: [(time: Date, uv: Double)] = []
     
@@ -53,6 +54,8 @@ struct ManualExposureSheet: View {
                                     if endTime <= newValue {
                                         endTime = min(newValue.addingTimeInterval(300), Date()) // Add 5 minutes
                                     }
+                                    // Recalculate vitamin D
+                                    calculateVitaminD()
                                 }
                         }
                         
@@ -67,6 +70,10 @@ struct ManualExposureSheet: View {
                             DatePicker("", selection: $endTime, in: startTime...Date(), displayedComponents: [.hourAndMinute])
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
+                                .onChange(of: endTime) { _, _ in
+                                    // Recalculate vitamin D
+                                    calculateVitaminD()
+                                }
                         }
                     }
                     .padding()
@@ -89,7 +96,10 @@ struct ManualExposureSheet: View {
                             .foregroundColor(.gray)
                         
                         ForEach(ClothingLevel.allCases, id: \.self) { level in
-                            Button(action: { selectedClothing = level }) {
+                            Button(action: { 
+                                selectedClothing = level 
+                                calculateVitaminD()
+                            }) {
                                 HStack {
                                     Image(systemName: level.iconName)
                                         .font(.system(size: 24))
@@ -113,6 +123,35 @@ struct ManualExposureSheet: View {
                         }
                     }
                     
+                    // Skin type selection
+                    Button(action: { showSkinTypePicker.toggle() }) {
+                        VStack(spacing: 10) {
+                            Text("SKIN TYPE")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white.opacity(0.7))
+                                .tracking(1.5)
+                            
+                            HStack {
+                                Text(selectedSkinType.description)
+                                    .font(.system(size: 16, weight: .medium))
+                                
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(Color.black.opacity(0.2))
+                        .cornerRadius(15)
+                    }
+                    .sheet(isPresented: $showSkinTypePicker) {
+                        SkinTypePicker(selection: $selectedSkinType)
+                    }
+                    .onChange(of: selectedSkinType) { _, _ in
+                        calculateVitaminD()
+                    }
+                    
                     // Error message
                     if let error = errorMessage {
                         Text(error)
@@ -121,25 +160,13 @@ struct ManualExposureSheet: View {
                             .multilineTextAlignment(.center)
                     }
                     
-                    // Calculate button
-                    Button(action: calculateVitaminD) {
-                        if isCalculating {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Text("Calculate Vitamin D")
-                                .font(.system(size: 18, weight: .semibold))
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.orange)
-                    .cornerRadius(12)
-                    .disabled(isCalculating || endTime <= startTime)
-                    
                     // Result display
-                    if showResult {
+                    if isCalculating {
+                        ProgressView("Calculating...")
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                    } else if calculatedVitaminD > 0 {
                         VStack(spacing: 16) {
                             Text("Estimated Vitamin D")
                                 .font(.headline)
@@ -173,13 +200,19 @@ struct ManualExposureSheet: View {
                             
                             // Save button
                             Button(action: saveToHealth) {
-                                Text("Save to Health")
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.green)
-                                    .cornerRadius(12)
+                                HStack {
+                                    Image(systemName: "heart.fill")
+                                        .font(.system(size: 16))
+                                    Text("Save to Health")
+                                        .font(.system(size: 18, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.green)
+                                .cornerRadius(12)
                             }
+                            .disabled(isCalculating)
                         }
                         .padding()
                         .background(Color.gray.opacity(0.1))
@@ -195,7 +228,7 @@ struct ManualExposureSheet: View {
             .navigationBarItems(
                 leading: Button("Cancel") { dismiss() },
                 trailing: Button("Done") { dismiss() }
-                    .opacity(showResult ? 1 : 0)
+                    .opacity(calculatedVitaminD > 0 ? 1 : 0)
             )
             .preferredColorScheme(.dark)
         }
@@ -206,6 +239,12 @@ struct ManualExposureSheet: View {
             let now = Date()
             startTime = now.addingTimeInterval(-3600) // 1 hour ago
             endTime = now
+            
+            // Use current skin type from calculator
+            selectedSkinType = vitaminDCalculator.skinType
+            
+            // Calculate initial vitamin D
+            calculateVitaminD()
         }
     }
     
@@ -257,7 +296,7 @@ struct ManualExposureSheet: View {
                     let vitaminD = vitaminDCalculator.calculateVitaminD(
                         uvIndex: uvIndex,
                         exposureMinutes: duration,
-                        skinType: vitaminDCalculator.skinType,
+                        skinType: selectedSkinType,
                         clothingLevel: selectedClothing
                     )
                     
@@ -265,7 +304,6 @@ struct ManualExposureSheet: View {
                 }
                 
                 calculatedVitaminD = totalVitaminD
-                showResult = true
                 isCalculating = false
             }
         }

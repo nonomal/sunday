@@ -431,9 +431,10 @@ struct ContentView: View {
                 showManualExposureSheet = true
             }) {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 22))
+                    .font(.system(size: 24))
                     .foregroundColor(.white)
-                    .frame(width: 60, height: 60)
+                    .frame(width: 60)
+                    .padding(.vertical, 20)
                     .background(Color.black.opacity(0.2))
                     .cornerRadius(15)
             }
