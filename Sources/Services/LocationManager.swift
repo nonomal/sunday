@@ -14,6 +14,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         didSet {
             // Share location name with widget
             sharedDefaults?.set(locationName, forKey: "locationName")
+            // Force synchronize to ensure widget gets updated data
+            sharedDefaults?.synchronize()
             // Trigger widget update
             WidgetCenter.shared.reloadAllTimelines()
         }
@@ -56,7 +58,23 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func requestPermission() {
-        manager.requestWhenInUseAuthorization()
+        // Check authorization status first to avoid blocking UI
+        authorizationStatus = manager.authorizationStatus
+        
+        switch authorizationStatus {
+        case .notDetermined:
+            // Only request authorization if not determined
+            // The actual request will be handled asynchronously
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            // Already authorized, start updating location
+            startUpdatingLocation()
+        case .denied, .restricted:
+            // Handle denial through the locationManagerDidChangeAuthorization callback
+            break
+        @unknown default:
+            break
+        }
     }
     
     func startUpdatingLocation() {
@@ -128,13 +146,24 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
-        locationServicesEnabled = CLLocationManager.locationServicesEnabled()
         
+        // Determine location services status based on authorization
+        // This avoids the synchronous call that can block UI
         switch authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:
+            locationServicesEnabled = true
             startUpdatingLocation()
             showLocationDeniedAlert = false
-        case .denied, .restricted:
+        case .denied:
+            locationServicesEnabled = true // Services are enabled, just denied for this app
+            stopUpdatingLocation()
+            // Only show alert if we haven't shown it before in this session
+            if !UserDefaults.standard.bool(forKey: "hasShownLocationDeniedAlert") {
+                showLocationDeniedAlert = true
+                UserDefaults.standard.set(true, forKey: "hasShownLocationDeniedAlert")
+            }
+        case .restricted:
+            locationServicesEnabled = false // Restricted usually means services are disabled
             stopUpdatingLocation()
             // Only show alert if we haven't shown it before in this session
             if !UserDefaults.standard.bool(forKey: "hasShownLocationDeniedAlert") {
@@ -142,6 +171,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                 UserDefaults.standard.set(true, forKey: "hasShownLocationDeniedAlert")
             }
         case .notDetermined:
+            locationServicesEnabled = true // Assume enabled until proven otherwise
             // Will be prompted when we request authorization
             break
         @unknown default:

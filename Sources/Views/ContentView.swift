@@ -15,11 +15,15 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     
     @State private var showClothingPicker = false
+    @State private var showSunscreenPicker = false
     @State private var showSkinTypePicker = false
     @State private var todaysTotal: Double = 0
     @State private var currentGradientColors: [Color] = []
     @State private var showInfoSheet = false
     @State private var showManualExposureSheet = false
+    @State private var showSessionCompletionSheet = false
+    @State private var pendingSessionStartTime: Date?
+    @State private var pendingSessionAmount: Double = 0
     @State private var lastUVUpdate: Date = UserDefaults.standard.object(forKey: "lastUVUpdate") as? Date ?? Date()
     @State private var timerCancellable: AnyCancellable?
     
@@ -89,7 +93,10 @@ struct ContentView: View {
                             uvSection
                             vitaminDSection
                             exposureToggle
-                            clothingSection
+                            HStack(spacing: 12) {
+                                clothingSection
+                                sunscreenSection
+                            }
                             skinTypeSection
                         }
                         .padding(.horizontal, 20)
@@ -187,6 +194,10 @@ struct ContentView: View {
         }
         .onChange(of: vitaminDCalculator.clothingLevel) {
             // Update rate when clothing changes
+            vitaminDCalculator.updateUV(uvService.currentUV)
+        }
+        .onChange(of: vitaminDCalculator.sunscreenLevel) {
+            // Update rate when sunscreen changes
             vitaminDCalculator.updateUV(uvService.currentUV)
         }
         .onChange(of: vitaminDCalculator.skinType) {
@@ -454,7 +465,17 @@ struct ContentView: View {
                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                 impactFeedback.impactOccurred()
                 
-                vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+                if vitaminDCalculator.isInSun && vitaminDCalculator.sessionVitaminD > 0 {
+                    // Ending session - show completion sheet
+                    // Store session data BEFORE toggling (which might clear it)
+                    pendingSessionStartTime = vitaminDCalculator.sessionStartTime
+                    pendingSessionAmount = vitaminDCalculator.sessionVitaminD
+                    // Don't toggle yet - let the sheet handle it
+                    showSessionCompletionSheet = true
+                } else {
+                    // Starting session - just toggle
+                    vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+                }
             }) {
                 HStack {
                     Image(systemName: vitaminDCalculator.isInSun ? "sun.max.fill" : 
@@ -506,7 +527,7 @@ struct ContentView: View {
                     .tracking(1.5)
                 
                 HStack {
-                    Text(vitaminDCalculator.clothingLevel.description)
+                    Text(vitaminDCalculator.clothingLevel.shortDescription)
                         .font(.system(size: 16, weight: .medium))
                     
                     Image(systemName: "chevron.down")
@@ -521,6 +542,35 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showClothingPicker) {
             ClothingPicker(selection: $vitaminDCalculator.clothingLevel)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
+    }
+    
+    private var sunscreenSection: some View {
+        Button(action: { showSunscreenPicker.toggle() }) {
+            VStack(spacing: 10) {
+                Text("SUNSCREEN")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.7))
+                    .tracking(1.5)
+                
+                HStack {
+                    Text(vitaminDCalculator.sunscreenLevel.description)
+                        .font(.system(size: 16, weight: .medium))
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12))
+                }
+                .foregroundColor(.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(Color.black.opacity(0.2))
+            .cornerRadius(15)
+        }
+        .sheet(isPresented: $showSunscreenPicker) {
+            SunscreenPicker(selection: $vitaminDCalculator.sunscreenLevel)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
@@ -562,6 +612,25 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showManualExposureSheet) {
             ManualExposureSheet()
+        }
+        .sheet(isPresented: $showSessionCompletionSheet) {
+            if let startTime = pendingSessionStartTime {
+                SessionCompletionSheet(
+                    sessionStartTime: startTime,
+                    sessionAmount: pendingSessionAmount,
+                    onSave: {
+                        // End the session and reset
+                        vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+                        loadTodaysTotal()
+                    },
+                    onCancel: {
+                        // Keep tracking - session continues
+                    }
+                )
+                .environmentObject(vitaminDCalculator)
+                .environmentObject(healthManager)
+                .environment(\.modelContext, modelContext)
+            }
         }
     }
     
@@ -695,6 +764,11 @@ struct ContentView: View {
         // Initialize vitamin D rate with current UV (even if 0)
         vitaminDCalculator.updateUV(uvService.currentUV)
         
+        // If session was restored, start tracking timer
+        if vitaminDCalculator.isInSun {
+            vitaminDCalculator.startSession(uvIndex: uvService.currentUV)
+        }
+        
         // Ensure moon phase is available for widget
         if uvService.currentMoonPhaseName.isEmpty {
             let defaultPhase = "Waxing Gibbous"
@@ -725,16 +799,12 @@ struct ContentView: View {
     
     private func handleSunToggle() {
         if !vitaminDCalculator.isInSun && vitaminDCalculator.sessionVitaminD > 0 {
-            let sessionAmount = vitaminDCalculator.sessionVitaminD
-            healthManager.saveVitaminD(amount: sessionAmount)
-            // Add the session amount to today's total immediately
-            todaysTotal += sessionAmount
-            // Reset the session vitamin D after saving
-            vitaminDCalculator.sessionVitaminD = 0.0
-            // Then reload from HealthKit to ensure accuracy
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                loadTodaysTotal()
-            }
+            // Store session data for the completion sheet
+            pendingSessionStartTime = vitaminDCalculator.sessionStartTime
+            pendingSessionAmount = vitaminDCalculator.sessionVitaminD
+            
+            // Show the completion sheet
+            showSessionCompletionSheet = true
         }
     }
     
@@ -823,7 +893,17 @@ struct ContentView: View {
         case "toggle":
             // Only toggle if UV > 0, matching the main app behavior
             if uvService.currentUV > 0 {
-                vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+                if vitaminDCalculator.isInSun && vitaminDCalculator.sessionVitaminD > 0 {
+                    // Ending session - show completion sheet
+                    // Store session data BEFORE toggling (which might clear it)
+                    pendingSessionStartTime = vitaminDCalculator.sessionStartTime
+                    pendingSessionAmount = vitaminDCalculator.sessionVitaminD
+                    // Don't toggle yet - let the sheet handle it
+                    showSessionCompletionSheet = true
+                } else {
+                    // Starting session - just toggle
+                    vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+                }
             }
         default:
             break
@@ -1077,7 +1157,7 @@ struct InfoSheet: View {
                         VStack(alignment: .leading, spacing: 10) {
                             FactorRow(
                                 label: "UV Factor",
-                                value: String(format: "%.2fx", (uvService.currentUV * 2.5) / (3.0 + uvService.currentUV)),
+                                value: String(format: "%.2fx", (uvService.currentUV * 3.0) / (4.0 + uvService.currentUV)),
                                 detail: "Non-linear response curve"
                             )
                             
@@ -1091,6 +1171,12 @@ struct InfoSheet: View {
                                 label: "Clothing",
                                 value: String(format: "%.0f%%", vitaminDCalculator.clothingLevel.exposureFactor * 100),
                                 detail: vitaminDCalculator.clothingLevel.description
+                            )
+                            
+                            FactorRow(
+                                label: "Sunscreen",
+                                value: String(format: "%.0f%%", vitaminDCalculator.sunscreenLevel.uvTransmissionFactor * 100),
+                                detail: vitaminDCalculator.sunscreenLevel.description
                             )
                             
                             FactorRow(
