@@ -620,6 +620,8 @@ struct ContentView: View {
                     sessionAmount: pendingSessionAmount,
                     onSave: {
                         // End the session and reset
+                        // Reset session amount first to avoid re-presenting the sheet
+                        vitaminDCalculator.sessionVitaminD = 0.0
                         vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
                         loadTodaysTotal()
                     },
@@ -798,7 +800,9 @@ struct ContentView: View {
     }
     
     private func handleSunToggle() {
-        if !vitaminDCalculator.isInSun && vitaminDCalculator.sessionVitaminD > 0 {
+        // Only show completion sheet when turning off tracking from main UI,
+        // not while the completion sheet itself is already presented.
+        if !vitaminDCalculator.isInSun && vitaminDCalculator.sessionVitaminD > 0 && !showSessionCompletionSheet {
             // Store session data for the completion sheet
             pendingSessionStartTime = vitaminDCalculator.sessionStartTime
             pendingSessionAmount = vitaminDCalculator.sessionVitaminD

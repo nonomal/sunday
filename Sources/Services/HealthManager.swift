@@ -1,7 +1,9 @@
 import Foundation
 import HealthKit
+import OSLog
 
 class HealthManager: ObservableObject {
+    private static let logger = Logger(subsystem: "it.sunday.app", category: "Health")
     @Published var isAuthorized = false
     @Published var lastError: String?
     
@@ -27,6 +29,13 @@ class HealthManager: ObservableObject {
             DispatchQueue.main.async {
                 self?.isAuthorized = success
                 self?.lastError = error?.localizedDescription
+                #if DEBUG
+                if success {
+                    Self.logger.debug("Health authorization granted")
+                } else if let msg = error?.localizedDescription {
+                    Self.logger.error("Health authorization failed: \(msg, privacy: .public)")
+                }
+                #endif
             }
         }
     }
@@ -59,9 +68,16 @@ class HealthManager: ObservableObject {
         )
         
         healthStore.save(sample) { [weak self] success, error in
-            if let error = error {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                if let error = error {
                     self?.lastError = error.localizedDescription
+                    #if DEBUG
+                    Self.logger.error("Save vitamin D failed: \(error.localizedDescription, privacy: .public)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    Self.logger.debug("Saved vitamin D sample: \(micrograms, privacy: .public) mcg at \(date.timeIntervalSince1970, privacy: .public)")
+                    #endif
                 }
             }
         }

@@ -4,6 +4,7 @@ import Combine
 import UserNotifications
 import SwiftData
 import WidgetKit
+import OSLog
 
 struct OpenMeteoResponse: Codable {
     let daily: DailyData
@@ -39,6 +40,10 @@ struct OpenMeteoResponse: Codable {
 }
 
 class UVService: ObservableObject {
+    private static let logger = Logger(subsystem: "it.sunday.app", category: "UVService")
+    #if DEBUG
+    private let signposter = OSSignposter(subsystem: "it.sunday.app", category: "Networking")
+    #endif
     @Published var currentUV: Double = 0.0
     @Published var maxUV: Double = 0.0
     @Published var tomorrowMaxUV: Double = 0.0
@@ -135,14 +140,19 @@ class UVService: ObservableObject {
         // Always update altitude from GPS, even if network fails
         let validAltitude = altitude >= 0 ? altitude : 0
         currentAltitude = validAltitude
-        let altitudeKm = validAltitude / 1000.0
-        let altitudeMultiplier = 1.0 + (altitudeKm * 0.1)
-        uvMultiplier = altitudeMultiplier
+        let _ = validAltitude / 1000.0
+        // Open-Meteo applies elevation when provided via `elevation`.
+        // Keep uvMultiplier for reference but do not apply it to API UV values to avoid double counting.
+        uvMultiplier = 1.0
+        #if DEBUG
+        Self.logger.debug("Fetch UV start lat=\(latitude, privacy: .public) lon=\(longitude, privacy: .public) elev=\(validAltitude, privacy: .public)m")
+        let fetchInterval = signposter.beginInterval("FetchUV")
+        #endif
         
         // Share with widget
         let sharedDefaults = UserDefaults(suiteName: "group.sunday.widget")
         sharedDefaults?.set(validAltitude, forKey: "currentAltitude")
-        sharedDefaults?.set(altitudeMultiplier, forKey: "uvMultiplier")
+        sharedDefaults?.set(uvMultiplier, forKey: "uvMultiplier")
         
         // Get current time components for UV interpolation
         let now = Date()
@@ -170,6 +180,10 @@ class UVService: ObservableObject {
                     self?.isLoading = false
                     if case .failure(let error) = completion {
                         self?.lastError = error.localizedDescription
+                        #if DEBUG
+                        Self.logger.error("Fetch UV failed: \(error.localizedDescription, privacy: .public)")
+                        self?.signposter.endInterval("FetchUV", fetchInterval)
+                        #endif
                         // Try to load cached data in offline mode
                         self?.loadCachedData(for: location)
                     }
@@ -182,12 +196,12 @@ class UVService: ObservableObject {
                     
                     // Get today's data (first item in arrays)
                     if let todayMaxUV = response.daily.uvIndexMax.first {
-                        self.maxUV = todayMaxUV * altitudeMultiplier
+                        self.maxUV = todayMaxUV
                     }
                     
                     // Get tomorrow's max UV
                     if response.daily.uvIndexMax.count > 1 {
-                        self.tomorrowMaxUV = response.daily.uvIndexMax[1] * altitudeMultiplier
+                        self.tomorrowMaxUV = response.daily.uvIndexMax[1]
                     }
                     
                     // Parse sunrise and sunset times for today and tomorrow
@@ -243,7 +257,7 @@ class UVService: ObservableObject {
                             interpolatedUV = currentHourUV + (nextHourUV - currentHourUV) * interpolationFactor
                         }
                         
-                        self.currentUV = interpolatedUV * altitudeMultiplier
+                        self.currentUV = interpolatedUV
                     } else {
                         // Fallback: estimate current UV based on max and time of day
                         self.currentUV = self.estimateCurrentUV(maxUV: self.maxUV, hour: hour)
@@ -279,6 +293,10 @@ class UVService: ObservableObject {
                     self.cacheUVData(response: response, location: location)
                     self.hasNoData = false
                     self.lastSuccessfulUpdate = Date()
+                    #if DEBUG
+                    Self.logger.debug("Fetch UV success maxUV=\(self.maxUV, privacy: .public) currentUV=\(self.currentUV, privacy: .public)")
+                    self.signposter.endInterval("FetchUV", fetchInterval)
+                    #endif
                 }
             )
             .store(in: &cancellables)
@@ -556,14 +574,17 @@ class UVService: ObservableObject {
         // Always update altitude from GPS since it still works offline
         let validAltitude = location.altitude >= 0 ? location.altitude : 0
         currentAltitude = validAltitude
-        let altitudeKm = validAltitude / 1000.0
-        let altitudeMultiplier = 1.0 + (altitudeKm * 0.1)
-        uvMultiplier = altitudeMultiplier
+        let _ = validAltitude / 1000.0
+        // In offline mode, also avoid scaling cached UV by altitude to prevent double counting.
+        uvMultiplier = 1.0
+        #if DEBUG
+        Self.logger.debug("Offline with altitude: \(validAltitude, privacy: .public)m; using cached UV without extra scaling")
+        #endif
         
         // Share with widget
         let sharedDefaults = UserDefaults(suiteName: "group.sunday.widget")
         sharedDefaults?.set(validAltitude, forKey: "currentAltitude")
-        sharedDefaults?.set(altitudeMultiplier, forKey: "uvMultiplier")
+        sharedDefaults?.set(uvMultiplier, forKey: "uvMultiplier")
         
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -609,7 +630,7 @@ class UVService: ObservableObject {
                 // Set current UV based on cached hourly data
                 let hour = calendar.component(.hour, from: Date())
                 if hour < todayData.hourlyUV.count {
-                    currentUV = todayData.hourlyUV[hour] * uvMultiplier
+                    currentUV = todayData.hourlyUV[hour]
                     if hour < todayData.hourlyCloudCover.count {
                         currentCloudCover = todayData.hourlyCloudCover[hour]
                         // Share with widget
@@ -617,13 +638,13 @@ class UVService: ObservableObject {
                     }
                 }
                 
-                maxUV = todayData.maxUV * uvMultiplier
+                maxUV = todayData.maxUV
                 todaySunrise = todayData.sunrise
                 todaySunset = todayData.sunset
                 
                 // Get tomorrow's data if available
                 if let tomorrowData = cachedData.first(where: { calendar.isDateInTomorrow($0.date) }) {
-                    tomorrowMaxUV = tomorrowData.maxUV * uvMultiplier
+                    tomorrowMaxUV = tomorrowData.maxUV
                     tomorrowSunrise = tomorrowData.sunrise
                     tomorrowSunset = tomorrowData.sunset
                 }
@@ -674,6 +695,82 @@ class UVService: ObservableObject {
             }
         } catch {
             // Failed to clean up old data
+        }
+    }
+
+    // MARK: - Historical UV for today (from cache)
+    func historicalUVPoints(from start: Date, to end: Date, near location: CLLocation?) -> [(Date, Double)] {
+        guard let modelContext = modelContext else { return [] }
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: start)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? start
+
+        // Resolve approximate coordinates for predicate
+        let targetLatitude = location?.coordinate.latitude ?? currentLatitude
+        // We don't store current longitude; prefer caller's location
+        let targetLongitude = location?.coordinate.longitude ?? 0.0
+
+        let latTolerance = 0.01
+        let lonTolerance = 0.01
+        let minLat = targetLatitude - latTolerance
+        let maxLat = targetLatitude + latTolerance
+        let minLon = targetLongitude - lonTolerance
+        let maxLon = targetLongitude + lonTolerance
+
+        let descriptor = FetchDescriptor<CachedUVData>(
+            predicate: #Predicate<CachedUVData> { data in
+                data.latitude >= minLat &&
+                data.latitude <= maxLat &&
+                data.longitude >= minLon &&
+                data.longitude <= maxLon &&
+                data.date >= dayStart &&
+                data.date < dayEnd
+            },
+            sortBy: [SortDescriptor(\.date, order: .forward)]
+        )
+
+        do {
+            let results = try modelContext.fetch(descriptor)
+            guard let today = results.first else { return [] }
+
+            // Build hourly timeline for the day
+            var points: [(Date, Double)] = []
+            let count = min(24, today.hourlyUV.count)
+            for h in 0..<count {
+                if let t = calendar.date(byAdding: .hour, value: h, to: dayStart) {
+                    let uv = today.hourlyUV[h]
+                    points.append((t, uv))
+                }
+            }
+
+            guard !points.isEmpty else { return [] }
+
+            // Helper to sample UV at arbitrary time using linear interpolation
+            func sample(at date: Date) -> Double {
+                let comp = calendar.dateComponents([.hour, .minute], from: date)
+                let h = max(0, min((comp.hour ?? 0), count - 1))
+                let baseUV = points[h].1
+                if h + 1 < points.count {
+                    let nextUV = points[h + 1].1
+                    let frac = Double(comp.minute ?? 0) / 60.0
+                    return baseUV + (nextUV - baseUV) * frac
+                } else {
+                    return baseUV
+                }
+            }
+
+            // Assemble subrange including boundaries
+            var window: [(Date, Double)] = []
+            let startUV = sample(at: start)
+            let endUV = sample(at: end)
+            window.append((start, startUV))
+            for (t, uv) in points where t > start && t < end {
+                window.append((t, uv))
+            }
+            window.append((end, endUV))
+            return window.sorted(by: { $0.0 < $1.0 })
+        } catch {
+            return []
         }
     }
 }

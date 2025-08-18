@@ -65,9 +65,7 @@ struct SessionCompletionSheet: View {
                     endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
-                .onAppear {
-                    print("SessionCompletionSheet appeared with amount: \(sessionAmount)")
-                }
+                // Removed debug logging on appear
                 
                 VStack(spacing: 0) {
                     // Session summary
@@ -198,6 +196,7 @@ struct SessionCompletionSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(.clear)
     }
     
     private func formatTime(_ date: Date) -> String {
@@ -231,9 +230,9 @@ struct SessionCompletionSheet: View {
     
     private func endWithoutSaving() {
         // Just end the session without saving to HealthKit
-        vitaminDCalculator.toggleSunExposure(uvIndex: 0)
+        // Reset session amount before toggling to avoid re-presenting the sheet
         vitaminDCalculator.sessionVitaminD = 0.0
+        vitaminDCalculator.toggleSunExposure(uvIndex: 0)
         dismiss()
     }
 }
-

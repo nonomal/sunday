@@ -1,7 +1,9 @@
 import Foundation
 import SwiftData
+import OSLog
 
 class MigrationService {
+    private static let logger = Logger(subsystem: "it.sunday.app", category: "Migration")
     static func migrateUserDefaults(to modelContext: ModelContext) {
         // Check if migration has already been performed
         let migrationKey = "hasPerformedSwiftDataMigration"
@@ -35,7 +37,9 @@ class MigrationService {
             do {
                 try modelContext.save()
             } catch {
-                print("Failed to migrate user preferences: \(error)")
+                #if DEBUG
+                Self.logger.error("Failed to migrate user preferences: \(String(describing: error), privacy: .public)")
+                #endif
             }
         }
         

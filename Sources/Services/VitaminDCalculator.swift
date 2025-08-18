@@ -4,6 +4,7 @@ import HealthKit
 import UserNotifications
 import WidgetKit
 import UIKit
+import OSLog
 
 enum ClothingLevel: Int, CaseIterable {
     case none = -1
@@ -52,7 +53,7 @@ enum SunscreenLevel: Int, CaseIterable {
     
     var description: String {
         switch self {
-        case .none: return "No sunscreen"
+        case .none: return "None"
         case .spf15: return "SPF 15"
         case .spf30: return "SPF 30"
         case .spf50: return "SPF 50"
@@ -153,6 +154,11 @@ class VitaminDCalculator: ObservableObject {
     private var appBackgroundObserver: NSObjectProtocol?
     private var wasTrackingBeforeBackground = false
     private var lastSessionSaveTime: Date?
+    #if DEBUG
+    private var sessionInterval: OSSignpostIntervalState?
+    private static let logger = Logger(subsystem: "it.sunday.app", category: "Calculator")
+    private let signposter = OSSignposter(subsystem: "it.sunday.app", category: "Calculator")
+    #endif
     
     // UV response curve parameters
     private let uvHalfMax = 4.0  // UV index for 50% vitamin D synthesis rate (more linear)
@@ -266,6 +272,11 @@ class VitaminDCalculator: ObservableObject {
         
         // Save initial session state
         saveActiveSession()
+        #if DEBUG
+        let state = signposter.beginInterval("Session")
+        sessionInterval = state
+        Self.logger.debug("Session start UV=\(uvIndex, privacy: .public)")
+        #endif
         
         // Update every second for real-time display
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -293,6 +304,13 @@ class VitaminDCalculator: ObservableObject {
         
         // Update widget data
         updateWidgetData()
+        #if DEBUG
+        if let state = sessionInterval {
+            signposter.endInterval("Session", state)
+            sessionInterval = nil
+        }
+        Self.logger.debug("Session stop")
+        #endif
     }
     
     func updateUV(_ uvIndex: Double) {
@@ -375,6 +393,9 @@ class VitaminDCalculator: ObservableObject {
     
     func toggleSunExposure(uvIndex: Double) {
         isInSun.toggle()
+        #if DEBUG
+        Self.logger.debug("Toggle exposure -> isInSun=\(self.isInSun, privacy: .public) UV=\(uvIndex, privacy: .public)")
+        #endif
         
         if isInSun {
             startSession(uvIndex: uvIndex)
@@ -624,6 +645,9 @@ class VitaminDCalculator: ObservableObject {
             
             // Trigger widget update
             WidgetCenter.shared.reloadAllTimelines()
+            #if DEBUG
+            Self.logger.debug("Widget reload: UV=\(uvService.currentUV, privacy: .public) rate=\(self.currentVitaminDRate, privacy: .public) today=\(todaysTotal, privacy: .public)")
+            #endif
         }
     }
     

@@ -28,34 +28,60 @@ struct ManualExposureSheet: View {
         return startOfDay...now
     }
     
+    private var formattedDuration: String {
+        guard endTime > startTime else { return "--" }
+        let minutes = Int(endTime.timeIntervalSince(startTime) / 60)
+        if minutes < 60 { return "\(minutes) min" }
+        let hours = minutes / 60
+        let remaining = minutes % 60
+        return remaining == 0 ? "\(hours) hr" : "\(hours) hr \(remaining) min"
+    }
+
+    private var formattedAmount: String {
+        if calculatedVitaminD <= 0 { return "--" }
+        if calculatedVitaminD < 1000 { return "\(Int(calculatedVitaminD)) IU" }
+        if calculatedVitaminD < 100000 {
+            let f = NumberFormatter(); f.numberStyle = .decimal; f.maximumFractionDigits = 0
+            return "\(f.string(from: NSNumber(value: calculatedVitaminD)) ?? "\(Int(calculatedVitaminD))") IU"
+        }
+        return String(format: "%.0fK IU", calculatedVitaminD / 1000)
+    }
+
     var body: some View {
         NavigationView {
             ZStack {
-                // Solid background to prevent transparency
-                Color(UIColor.systemBackground)
-                    .ignoresSafeArea()
+                // Gradient background to match SessionCompletionSheet
+                LinearGradient(
+                    colors: [Color(hex: "4a90e2"), Color(hex: "7bb7e5")],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 24) {
-                    // Instructions
-                    Text("Log past sun exposure from today")
-                        .font(.headline)
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                        .padding(.top)
+                    // Header icon
+                    VStack(spacing: 20) {
+                        Image(systemName: "sun.max.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.yellow)
+                            .symbolEffect(.pulse)
+                            .padding(.top, 10)
+                    }
                     
                     // Time selection
                     VStack(spacing: 16) {
                         // Start time
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Start Time")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                            Text("START TIME")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white.opacity(0.6))
+                                .tracking(1.2)
                             
                             DatePicker("", selection: $startTime, in: timeRange, displayedComponents: [.hourAndMinute])
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
-                                .background(Color(UIColor.systemBackground))
+                                .colorScheme(.dark)
                                 .onChange(of: startTime) { _, newValue in
                                     // Ensure end time is after start time
                                     if endTime <= newValue {
@@ -66,18 +92,17 @@ struct ManualExposureSheet: View {
                                 }
                         }
                         
-                        Divider()
-                        
                         // End time
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("End Time")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                            Text("END TIME")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white.opacity(0.6))
+                                .tracking(1.2)
                             
                             DatePicker("", selection: $endTime, in: startTime...Date(), displayedComponents: [.hourAndMinute])
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
-                                .background(Color(UIColor.systemBackground))
+                                .colorScheme(.dark)
                                 .onChange(of: endTime) { _, _ in
                                     // Recalculate vitamin D
                                     calculateVitaminD()
@@ -85,17 +110,10 @@ struct ManualExposureSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color.black.opacity(0.2))
                     .cornerRadius(12)
                     
-                    // Duration display
-                    if endTime > startTime {
-                        let duration = endTime.timeIntervalSince(startTime)
-                        let minutes = Int(duration / 60)
-                        Text("Duration: \(minutes) minutes")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
+                    // Duration displayed in header above
                     
                     // Clothing and Sunscreen selection
                     HStack(spacing: 12) {
@@ -178,36 +196,55 @@ struct ManualExposureSheet: View {
                             .frame(maxWidth: .infinity)
                     } else if calculatedVitaminD > 0 {
                         VStack(spacing: 16) {
-                            Text("Estimated Vitamin D")
-                                .font(.headline)
-                            
-                            Text("\(Int(calculatedVitaminD)) IU")
-                                .font(.system(size: 36, weight: .bold))
-                                .foregroundColor(.orange)
+                            Text("UV DURING EXPOSURE")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white.opacity(0.6))
+                                .tracking(1.2)
                             
                             // UV data points used
                             if !uvDataPoints.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("UV Index during exposure:")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    
                                     ForEach(uvDataPoints, id: \.time) { point in
                                         HStack {
                                             Text(point.time, style: .time)
                                                 .font(.caption2)
+                                                .foregroundColor(.white.opacity(0.8))
                                             Spacer()
                                             Text("UV: \(String(format: "%.1f", point.uv))")
                                                 .font(.caption2)
-                                                .foregroundColor(.orange)
+                                                .foregroundColor(.white)
                                         }
                                     }
                                 }
                                 .padding()
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
+                                .background(Color.black.opacity(0.2))
+                                .cornerRadius(12)
                             }
-                            
+                        }
+                        .padding()
+                        .background(Color.black.opacity(0.2))
+                        .cornerRadius(12)
+
+                        // Summary + Save card
+                        VStack(spacing: 12) {
+                            // Summary just above the Save button (no surrounding box)
+                            VStack(spacing: 6) {
+                                Text("VITAMIN D ESTIMATE")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .tracking(1.2)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                    .allowsTightening(true)
+                                Text(formattedAmount)
+                                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                    .allowsTightening(true)
+                            }
+                            .frame(maxWidth: .infinity)
+
                             // Save button
                             Button(action: saveToHealth) {
                                 HStack {
@@ -218,34 +255,36 @@ struct ManualExposureSheet: View {
                                 }
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.green)
-                                .cornerRadius(12)
+                                .padding(.vertical, 16)
+                                .background(Color.white.opacity(0.2))
+                                .cornerRadius(15)
                             }
-                            .disabled(isCalculating)
+                            .disabled(isCalculating || calculatedVitaminD <= 0)
                         }
                         .padding()
-                        .background(Color.gray.opacity(0.1))
+                        .background(Color.black.opacity(0.2))
                         .cornerRadius(12)
                     }
-                    
-                    Spacer(minLength: 20)
+                    // Close button
+                    Button(action: { dismiss() }) {
+                        Text("Cancel")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .padding(.bottom, 20)
                 }
-                .padding()
+                .padding(.horizontal, 20)
             }
             }
             .navigationTitle("Log Past Exposure")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(
-                leading: Button("Cancel") { dismiss() },
-                trailing: Button("Done") { dismiss() }
-                    .opacity(calculatedVitaminD > 0 ? 1 : 0)
-            )
             .preferredColorScheme(.dark)
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .presentationBackground(Color(UIColor.systemBackground))
+        .presentationBackground(.clear)
         .onAppear {
             // Set default times - 1 hour ago to now
             let now = Date()
@@ -320,29 +359,25 @@ struct ManualExposureSheet: View {
     }
     
     private func fetchHistoricalUV(for location: CLLocation, from startTime: Date, to endTime: Date) async -> [(time: Date, uv: Double)] {
-        // For now, we'll use the current UV data and interpolate
-        // In a real implementation, this would fetch hourly UV data for today
-        
+        // Prefer cached hourly UV from UVService when available
+        let cached = uvService.historicalUVPoints(from: startTime, to: endTime, near: location)
+        if !cached.isEmpty {
+            return cached.map { (time: $0.0, uv: $0.1) }
+        }
+
+        // Fallback: estimate via solar elevation if cache is unavailable
         var dataPoints: [(time: Date, uv: Double)] = []
-        
-        // Get hourly intervals
         var currentTime = startTime
         let hourInterval: TimeInterval = 3600 // 1 hour
-        
         while currentTime <= endTime {
-            // For each hour, try to get UV data
-            // This is a simplified version - in reality, you'd call the UV API for historical data
             let uvIndex = await estimateUVForTime(currentTime, at: location)
             dataPoints.append((time: currentTime, uv: uvIndex))
             currentTime = currentTime.addingTimeInterval(hourInterval)
         }
-        
-        // Add final point if needed
         if dataPoints.last?.time != endTime {
             let uvIndex = await estimateUVForTime(endTime, at: location)
             dataPoints.append((time: endTime, uv: uvIndex))
         }
-        
         return dataPoints
     }
     
@@ -420,4 +455,3 @@ struct ManualExposureSheet: View {
         }
     }
 }
-
