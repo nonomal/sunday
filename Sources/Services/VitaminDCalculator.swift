@@ -327,7 +327,7 @@ class VitaminDCalculator: ObservableObject {
         
         // UV factor: Michaelis-Menten-like saturation curve
         // More accurate representation of vitamin D synthesis kinetics
-        // UV 0 = 0x, UV 3 = 1.25x (50% of max), UV 12 = 2x, UV∞ → 2.5x
+        // UV 0 = 0x, UV 4 ≈ 1.5x (50% of max), UV 12 ≈ 2.25x, UV∞ → 3.0x
         let uvFactor = (uvIndex * uvMaxFactor) / (uvHalfMax + uvIndex)
         
         // Exposure based on clothing coverage

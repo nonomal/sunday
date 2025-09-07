@@ -45,9 +45,10 @@ class HealthManager: ObservableObject {
         isAuthorized = status == .sharingAuthorized
     }
     
-    func saveVitaminD(amount: Double, date: Date = Date()) {
+    func saveVitaminD(amount: Double, date: Date = Date(), completion: ((Bool) -> Void)? = nil) {
         guard isAuthorized else {
             requestAuthorization()
+            completion?(false)
             return
         }
         
@@ -74,10 +75,12 @@ class HealthManager: ObservableObject {
                     #if DEBUG
                     Self.logger.error("Save vitamin D failed: \(error.localizedDescription, privacy: .public)")
                     #endif
+                    completion?(false)
                 } else {
                     #if DEBUG
                     Self.logger.debug("Saved vitamin D sample: \(micrograms, privacy: .public) mcg at \(date.timeIntervalSince1970, privacy: .public)")
                     #endif
+                    completion?(true)
                 }
             }
         }

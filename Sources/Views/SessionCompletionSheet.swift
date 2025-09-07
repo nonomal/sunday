@@ -58,15 +58,15 @@ struct SessionCompletionSheet: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // Gradient background matching app style
+                // Gradient background matching app style (same as ManualExposureSheet)
                 LinearGradient(
                     colors: [Color(hex: "4a90e2"), Color(hex: "7bb7e5")],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
-                // Removed debug logging on appear
-                
+
+                // Content
                 VStack(spacing: 0) {
                     // Session summary
                     VStack(spacing: 20) {
@@ -196,6 +196,7 @@ struct SessionCompletionSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        // Keep the sheet background clear to match ManualExposureSheet, avoiding white flash
         .presentationBackground(.clear)
     }
     
@@ -206,26 +207,26 @@ struct SessionCompletionSheet: View {
     }
     
     private func saveSession() {
-        // Save to HealthKit
-        healthManager.saveVitaminD(amount: sessionAmount)
-        
-        // Create and save session record to SwiftData
-        let session = VitaminDSession(
-            startTime: sessionStartTime,
-            totalIU: sessionAmount,
-            averageUV: 0, // TODO: Calculate average UV
-            peakUV: 0, // TODO: Track peak UV
-            clothingLevel: vitaminDCalculator.clothingLevel.rawValue,
-            skinType: vitaminDCalculator.skinType.rawValue
-        )
-        session.endTime = selectedEndTime
-        
-        modelContext.insert(session)
-        try? modelContext.save()
-        
-        // Call completion handler and dismiss
-        onSave()
-        dismiss()
+        // Save to HealthKit and wait for completion to ensure UI updates reflect the saved sample
+        healthManager.saveVitaminD(amount: sessionAmount) { _ in
+            // Create and save session record to SwiftData
+            let session = VitaminDSession(
+                startTime: sessionStartTime,
+                totalIU: sessionAmount,
+                averageUV: 0, // TODO: Calculate average UV
+                peakUV: 0, // TODO: Track peak UV
+                clothingLevel: vitaminDCalculator.clothingLevel.rawValue,
+                skinType: vitaminDCalculator.skinType.rawValue
+            )
+            session.endTime = selectedEndTime
+            
+            modelContext.insert(session)
+            try? modelContext.save()
+            
+            // Call completion handler and dismiss
+            onSave()
+            dismiss()
+        }
     }
     
     private func endWithoutSaving() {

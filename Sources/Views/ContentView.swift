@@ -614,25 +614,42 @@ struct ContentView: View {
             ManualExposureSheet()
         }
         .sheet(isPresented: $showSessionCompletionSheet) {
-            if let startTime = pendingSessionStartTime {
-                SessionCompletionSheet(
-                    sessionStartTime: startTime,
-                    sessionAmount: pendingSessionAmount,
-                    onSave: {
-                        // End the session and reset
-                        // Reset session amount first to avoid re-presenting the sheet
-                        vitaminDCalculator.sessionVitaminD = 0.0
-                        vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
-                        loadTodaysTotal()
-                    },
-                    onCancel: {
-                        // Keep tracking - session continues
-                    }
+            ZStack {
+                // Match the ManualExposureSheet background to avoid any white flash
+                LinearGradient(
+                    colors: [Color(hex: "4a90e2"), Color(hex: "7bb7e5")],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
-                .environmentObject(vitaminDCalculator)
-                .environmentObject(healthManager)
-                .environment(\.modelContext, modelContext)
+                .ignoresSafeArea()
+
+                if let startTime = pendingSessionStartTime {
+                    SessionCompletionSheet(
+                        sessionStartTime: startTime,
+                        sessionAmount: pendingSessionAmount,
+                        onSave: {
+                            // End the session and reset
+                            // Reset session amount first to avoid re-presenting the sheet
+                            vitaminDCalculator.sessionVitaminD = 0.0
+                            vitaminDCalculator.toggleSunExposure(uvIndex: uvService.currentUV)
+                            loadTodaysTotal()
+                        },
+                        onCancel: {
+                            // Keep tracking - session continues
+                        }
+                    )
+                    .environmentObject(vitaminDCalculator)
+                    .environmentObject(healthManager)
+                    .environment(\.modelContext, modelContext)
+                } else {
+                    // Fallback placeholder to ensure non-empty content during first frame
+                    ProgressView().tint(.white)
+                }
             }
+            .preferredColorScheme(.dark)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.clear)
         }
     }
     
@@ -1266,7 +1283,8 @@ struct InfoSheet: View {
         } else if age >= 70 {
             return 0.25
         } else {
-            return max(0.25, 1.0 - Double(age - 20) * 0.015)
+            // Match the calculator's age slope (~1% per year after 20)
+            return max(0.25, 1.0 - Double(age - 20) * 0.01)
         }
     }
 }
