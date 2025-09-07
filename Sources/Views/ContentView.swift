@@ -4,6 +4,7 @@ import UIKit
 import SwiftData
 import WidgetKit
 import Combine
+import UserNotifications
 
 struct ContentView: View {
     @EnvironmentObject var locationManager: LocationManager
@@ -768,6 +769,8 @@ struct ContentView: View {
         healthManager.requestAuthorization()
         loadTodaysTotal()
         currentGradientColors = gradientColors
+        // Request notification permissions once up front (for burn warnings and sun events)
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         
         // Connect services - MUST set modelContext before any UV data fetching
         vitaminDCalculator.setHealthManager(healthManager)
@@ -853,11 +856,8 @@ struct ContentView: View {
         } else if value < 1000 {
             return "\(Int(value))"
         } else if value < 100000 {
-            // Add comma formatting for readability
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.maximumFractionDigits = 0
-            return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
+            // Add comma formatting for readability (shared formatter)
+            return Formatters.decimal.string(from: NSNumber(value: value)) ?? "\(Int(value))"
         } else {
             // Handle very large numbers with K notation
             return String(format: "%.0fK", value / 1000)
@@ -868,14 +868,20 @@ struct ContentView: View {
         if value < 1000 {
             return "\(Int(value))"
         } else if value < 100000 {
-            // Add comma formatting for readability
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.maximumFractionDigits = 0
-            return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
+            // Add comma formatting for readability (shared formatter)
+            return Formatters.decimal.string(from: NSNumber(value: value)) ?? "\(Int(value))"
         } else {
             return String(format: "%.0fK", value / 1000)
         }
+    }
+
+    private enum Formatters {
+        static let decimal: NumberFormatter = {
+            let f = NumberFormatter()
+            f.numberStyle = .decimal
+            f.maximumFractionDigits = 0
+            return f
+        }()
     }
     
     private func sessionDurationString(from startTime: Date) -> String {

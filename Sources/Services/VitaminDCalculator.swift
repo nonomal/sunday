@@ -149,11 +149,18 @@ class VitaminDCalculator: ObservableObject {
     private weak var uvService: UVService?
     private var healthKitSkinType: SkinType?
     private var lastUpdateTime: Date?
+    private var lastRateUpdateTime: Date?
+    private var lastRateUV: Double = -1
     private let sharedDefaults = UserDefaults(suiteName: "group.sunday.widget")
     private var appActiveObserver: NSObjectProtocol?
     private var appBackgroundObserver: NSObjectProtocol?
     private var wasTrackingBeforeBackground = false
     private var lastSessionSaveTime: Date?
+    private var lastWidgetUpdateTime: Date?
+    private let widgetUpdateThrottle: TimeInterval = 60.0
+    private var todaysHealthBase: Double = 0.0
+    private var lastHealthBaseRefreshTime: Date?
+    private let healthBaseRefreshInterval: TimeInterval = 900.0 // 15 min
     #if DEBUG
     private var sessionInterval: OSSignpostIntervalState?
     private static let logger = Logger(subsystem: "it.sunday.app", category: "Calculator")
@@ -184,6 +191,8 @@ class VitaminDCalculator: ObservableObject {
         checkHealthKitSkinType()
         checkHealthKitAge()
         updateAdaptationFactor()
+        // Prime today's base from Health
+        refreshTodaysHealthBase(force: true)
     }
     
     func setUVService(_ uvService: UVService) {
@@ -302,8 +311,8 @@ class VitaminDCalculator: ObservableObject {
         // Clear saved session state
         saveActiveSession()
         
-        // Update widget data
-        updateWidgetData()
+        // Update widget data (force reload once on stop)
+        updateWidgetData(force: true)
         #if DEBUG
         if let state = sessionInterval {
             signposter.endInterval("Session", state)
@@ -363,15 +372,22 @@ class VitaminDCalculator: ObservableObject {
         // Final calculation: base * UV * clothing * sunscreen * skin type * age * quality * adaptation
         currentVitaminDRate = baseRate * uvFactor * exposureFactor * sunscreenFactor * skinFactor * ageFactor * currentUVQualityFactor * currentAdaptationFactor
         
-        // Update widget with new rate
+        // Throttled widget update
         updateWidgetData()
     }
     
     private func updateVitaminD(uvIndex: Double) {
         guard isInSun else { return }
         
-        // Always recalculate rate with current UV to ensure accuracy
-        updateVitaminDRate(uvIndex: uvIndex)
+        // Recalculate rate only when UV changed meaningfully or quality factor needs refresh (~60s)
+        let now = Date()
+        let uvChanged = abs(uvIndex - lastRateUV) > 0.01
+        let needsQualityRefresh = lastRateUpdateTime == nil || now.timeIntervalSince(lastRateUpdateTime!) >= 60.0
+        if uvChanged || needsQualityRefresh {
+            updateVitaminDRate(uvIndex: uvIndex)
+            lastRateUpdateTime = now
+            lastRateUV = uvIndex
+        }
         
         // Calculate actual time elapsed since last update (should be ~1 second)
         let now = Date()
@@ -387,7 +403,7 @@ class VitaminDCalculator: ObservableObject {
             lastSessionSaveTime = now
         }
         
-        // Update widget data
+        // Throttled widget update
         updateWidgetData()
     }
     
@@ -410,7 +426,7 @@ class VitaminDCalculator: ObservableObject {
         sessionVitaminD += amount
         
         // Update widget data to reflect the new total
-        updateWidgetData()
+        updateWidgetData(force: true)
     }
     
     func calculateVitaminD(uvIndex: Double, exposureMinutes: Double, skinType: SkinType, clothingLevel: ClothingLevel, sunscreenLevel: SunscreenLevel = .none) -> Double {
@@ -551,19 +567,14 @@ class VitaminDCalculator: ObservableObject {
     }
     
     private func scheduleImmediateBurnWarning() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            
-            let content = UNMutableNotificationContent()
-            content.title = "🔥 Approaching burn limit!"
-            content.body = "You've reached 80% of your burn threshold. Consider seeking shade."
-            content.sound = .default
-            
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-            let request = UNNotificationRequest(identifier: "burnWarning", content: content, trigger: trigger)
-            
-            UNUserNotificationCenter.current().add(request)
-        }
+        let content = UNMutableNotificationContent()
+        content.title = "🔥 Approaching burn limit!"
+        content.body = "You've reached 80% of your burn threshold. Consider seeking shade."
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: "burnWarning", content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
     }
     
     private func calculateUVQualityFactor() -> Double {
@@ -620,33 +631,51 @@ class VitaminDCalculator: ObservableObject {
         }
     }
     
-    private func updateWidgetData() {
-        guard let uvService = uvService else { return }
-        
-        sharedDefaults?.set(uvService.currentUV, forKey: "currentUV")
-        sharedDefaults?.set(isInSun, forKey: "isTracking")
-        sharedDefaults?.set(currentVitaminDRate, forKey: "vitaminDRate")
-        
-        // Force synchronize UserDefaults before widget update
-        sharedDefaults?.synchronize()
-        
-        // Calculate today's total including current session
+    private func refreshTodaysHealthBase(force: Bool = false) {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
-        
-        healthManager?.readVitaminDIntake(from: startOfDay, to: endOfDay) { [weak self] total, error in
+        let now = Date()
+        if !force, let last = lastHealthBaseRefreshTime, now.timeIntervalSince(last) < healthBaseRefreshInterval {
+            return
+        }
+        healthManager?.readVitaminDIntake(from: startOfDay, to: endOfDay) { [weak self] total, _ in
             guard let self = self else { return }
-            let todaysTotal = total + self.sessionVitaminD
-            self.sharedDefaults?.set(todaysTotal, forKey: "todaysTotal")
-            
-            // Force synchronize again after setting today's total
-            self.sharedDefaults?.synchronize()
-            
-            // Trigger widget update
+            self.todaysHealthBase = total
+            self.lastHealthBaseRefreshTime = Date()
+        }
+    }
+
+    // Expose a public refresh for callers after Health writes
+    func refreshTodayTotals(forceWidget: Bool = false) {
+        refreshTodaysHealthBase(force: true)
+        if forceWidget { updateWidgetData(force: true) }
+    }
+
+    private func updateWidgetData() { updateWidgetData(force: false) }
+
+    private func updateWidgetData(force: Bool) {
+        guard let uvService = uvService else { return }
+        
+        // Cache latest simple values for widget
+        sharedDefaults?.set(uvService.currentUV, forKey: "currentUV")
+        sharedDefaults?.set(isInSun, forKey: "isTracking")
+        sharedDefaults?.set(currentVitaminDRate, forKey: "vitaminDRate")
+
+        // Ensure health base is reasonably fresh
+        refreshTodaysHealthBase()
+
+        // Compute today total without a Health read
+        let todaysTotal = todaysHealthBase + sessionVitaminD
+        sharedDefaults?.set(todaysTotal, forKey: "todaysTotal")
+
+        // Throttle widget timeline reloads
+        let now = Date()
+        if force || lastWidgetUpdateTime == nil || now.timeIntervalSince(lastWidgetUpdateTime!) >= widgetUpdateThrottle {
             WidgetCenter.shared.reloadAllTimelines()
+            lastWidgetUpdateTime = now
             #if DEBUG
-            Self.logger.debug("Widget reload: UV=\(uvService.currentUV, privacy: .public) rate=\(self.currentVitaminDRate, privacy: .public) today=\(todaysTotal, privacy: .public)")
+            Self.logger.debug("Widget reload (throttled): UV=\(uvService.currentUV, privacy: .public) rate=\(self.currentVitaminDRate, privacy: .public) today=\(todaysTotal, privacy: .public)")
             #endif
         }
     }

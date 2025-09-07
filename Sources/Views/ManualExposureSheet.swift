@@ -439,11 +439,14 @@ struct ManualExposureSheet: View {
     }
     
     private func saveToHealth() {
-        // Save to health
-        healthManager.saveVitaminD(amount: calculatedVitaminD)
-        
-        // Update today's total
-        vitaminDCalculator.addManualEntry(amount: calculatedVitaminD)
+        // Save to Health with completion to ensure caches refresh
+        let amount = calculatedVitaminD
+        healthManager.saveVitaminD(amount: amount) { _ in
+            // Update UI immediately with manual addition
+            vitaminDCalculator.addManualEntry(amount: amount)
+            // Refresh cached Health base and widget
+            vitaminDCalculator.refreshTodayTotals(forceWidget: true)
+        }
         
         // Haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)

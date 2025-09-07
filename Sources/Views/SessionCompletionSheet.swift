@@ -209,6 +209,8 @@ struct SessionCompletionSheet: View {
     private func saveSession() {
         // Save to HealthKit and wait for completion to ensure UI updates reflect the saved sample
         healthManager.saveVitaminD(amount: sessionAmount) { _ in
+            // Refresh today's base from Health for accurate totals and widget
+            vitaminDCalculator.refreshTodayTotals(forceWidget: true)
             // Create and save session record to SwiftData
             let session = VitaminDSession(
                 startTime: sessionStartTime,

@@ -14,8 +14,6 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         didSet {
             // Share location name with widget
             sharedDefaults?.set(locationName, forKey: "locationName")
-            // Force synchronize to ensure widget gets updated data
-            sharedDefaults?.synchronize()
             // Trigger widget update
             WidgetCenter.shared.reloadAllTimelines()
         }

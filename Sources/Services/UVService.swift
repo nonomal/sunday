@@ -269,7 +269,6 @@ class UVService: ObservableObject {
                         self.currentCloudCover = cloudCover[hour]
                         // Share with widget
                         sharedDefaults?.set(self.currentCloudCover, forKey: "currentCloudCover")
-                        sharedDefaults?.synchronize()
                     }
                     
                     // Calculate safe exposure times
@@ -282,9 +281,6 @@ class UVService: ObservableObject {
                     if self.isOfflineMode {
                         self.isOfflineMode = false
                     }
-                    
-                    // Force synchronize widget data before update
-                    sharedDefaults?.synchronize()
                     
                     // Trigger widget update
                     WidgetCenter.shared.reloadAllTimelines()
@@ -651,9 +647,6 @@ class UVService: ObservableObject {
                 
                 calculateSafeExposureTimes()
                 checkVitaminDWinter()
-                
-                // Force synchronize widget data before update
-                sharedDefaults?.synchronize()
                 
                 // Trigger widget update
                 WidgetCenter.shared.reloadAllTimelines()
