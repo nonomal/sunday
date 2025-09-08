@@ -390,7 +390,6 @@ class VitaminDCalculator: ObservableObject {
         }
         
         // Calculate actual time elapsed since last update (should be ~1 second)
-        let now = Date()
         let elapsed = lastUpdateTime.map { now.timeIntervalSince($0) } ?? 1.0
         lastUpdateTime = now
         
